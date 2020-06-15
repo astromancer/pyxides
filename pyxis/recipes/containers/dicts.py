@@ -42,20 +42,20 @@ def pformat(dict_, name='', converter=str, brackets='{}', sep=':',
         >>> pformat(dict(x='hello',
                         longkey='w',
                         foo=dict(nested=1,
-                                 what='lkdskldlkdlklkdlkd',
-                                 x=dict(triple='nestnestnestnestyyy'))))
+                                 what='?',
+                                 x=dict(triple='nested'))))
 
         {x      : hello,
          longkey: w,
          foo    : {nested: 1,
-                   what  : lkdskldlkdlklkdlkd,
-                   x     : {triple: nestnestnestnestyyy}}}
+                   what  : ?,
+                   x     : {triple: nested}}}
 
     """
     s = _pformat(dict_, converter, brackets, sep, post_sep_space, item_sep)
     indent = ' ' * (len(name) + 1)
     s = s.replace('\n', '\n' + indent)
-    return '%s(%r)' % (name, s)
+    return '%s(%s)' % (name, s)
 
 
 def _pformat(dict_, converter=str, brackets='{}', sep=':', post_sep_space=0,
@@ -335,13 +335,16 @@ class Record(Indexable, OrderedAttrDict):
     pass
 
 
-# ****************************************************************************************************
 class TransDict(UserDict):
     """
-    A many to one mapping.
+    A many to one mapping. Provides a generic way of translating keywords to
+    their intended meaning.  Good for coders with bad memory. May be
+    confusing to the uninitiated, so use with discretion.
 
-    Provides a generic way of, for example, translating keywords to their
-    intended meaning in a call signature.
+    Examples
+    --------
+    # TODO
+
     """
 
     def __init__(self, dic=None, **kwargs):
@@ -368,13 +371,12 @@ class TransDict(UserDict):
         return flatiter((self.keys(), self._map.keys()))
 
     def many2one(self, many2one):
-        # self[one]       #error check
+        # self[one]       # error check
         for many, one in many2one.items():
             for key in many:
                 self._map[key] = one
 
 
-# ****************************************************************************************************
 class Many2OneMap(TransDict):
     """
     Expands on TransDict by adding equivalence mapping functions for keywords
@@ -382,10 +384,11 @@ class Many2OneMap(TransDict):
 
     def __init__(self, dic=None, **kwargs):
         super().__init__(dic, **kwargs)
-        self._eqmap = []  # equivalence mappings
+        # equivalence mappings - callables that return the desired item
+        self._mappings = []
 
-    def add_map(self, func):
-        self._eqmap.append(func)
+    def add_mapping(self, func):
+        self._mappings.append(func)
 
     def __missing__(self, key):
         try:
@@ -393,20 +396,21 @@ class Many2OneMap(TransDict):
             return super().__missing__(key)
         except KeyError as err:
             # try translate with equivalence maps
-            for emap in self._eqmap:
-                if super().__contains__(emap(key)):
-                    return self[emap(key)]
+            for func in self._mappings:
+                resolved = func(key)
+                if super().__contains__(resolved):
+                    return self[resolved]
             raise err
 
     def __contains__(self, key):
         if super().__contains__(key):
             return True  # no translation needed
 
-        for emap in self._eqmap:
-            try:
-                return super().__contains__(emap(key))
-            except:
-                pass
+        for func in self._mappings:
+            # try:
+            return super().__contains__(func(key))
+            # except:
+            #     pass
 
         return False
 
@@ -416,6 +420,7 @@ class IndexableOrderedDict(OrderedDict):
         if isinstance(key, int):
             return self[list(self.keys())[key]]
         else:
+            # noinspection PyUnresolvedReferences
             return OrderedDict.__missing__(self, key)
 
 
