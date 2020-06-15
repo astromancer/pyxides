@@ -2,6 +2,8 @@
 Container magic
 """
 
+from recipes.decor import raises as bork
+import warnings
 import abc
 from collections import UserList
 import numbers
@@ -48,7 +50,7 @@ def str2tup(keys):
 #         return tuple(map(getter, attrs))
 #     return fn
 
-class SelfAwareContainer(object):
+class SelfAwareContainer(object):   # recipes.oo.SelfAware ???
     """
     A mixin class for containers that bypasses object initialization if the
     first argument to the initializer is an object of the same class,
@@ -69,25 +71,7 @@ class SelfAwareContainer(object):
         # TODO: test + examples
 
 
-# class OfTypes(object):
-#     def __new__(cls, item_types):
-#         cls._item_types = tuple(item_types)
-#         return TypeEnforcer
-
-# def OfTypes(item_types):
-
-def base_order(kls):
-    if issubclass(kls, _TypeEnforcer):
-        return 0
-
-    if issubclass(kls, UserList):
-        return 1
-
-    return 1    
-
 class OfTypes(abc.ABCMeta):
-    # NOTE: inherit from ABCMeta to avoid metaclass conflict with UserList which
-    # has metaclass abc.ABCMeta
     """
     Factory that creates TypeEnforcer classes. Allows for the following usage
     pattern: 
@@ -97,16 +81,16 @@ class OfTypes(abc.ABCMeta):
      attribute `_item_types`
     """
 
+    # NOTE: inherit from ABCMeta to avoid metaclass conflict with UserList which
+    # has metaclass abc.ABCMeta
+
     def __new__(mcs, *args):
 
         if isinstance(args[0], str):
             # This results from an internal call during class construction
             name, bases, attrs = args
-            # sneakily place `_TypeEnforcer` ahead of `UserList` in the
-            # inheritance order so that type checking happens on init
-            bases = tuple(sorted(bases, key=base_order))
             # create class
-            return super().__new__(mcs, name, bases, attrs)
+            return super().__new__(mcs, name, mcs.reorder_bases(bases), attrs)
 
         # we are here if invoked by direct call:
         # cls = OfTypes(int)
@@ -115,6 +99,31 @@ class OfTypes(abc.ABCMeta):
         # `_item_types` class attribute set to tuple of allowed types
         return super().__new__(mcs, 'TypeEnforcer', (_TypeEnforcer,),
                                {'_item_types': tuple(args)})
+
+    @staticmethod
+    def reorder_bases(bases):
+        # sneakily place `_TypeEnforcer` ahead of `UserList` in the inheritance
+        # order so that type checking happens on init.
+        # TODO: might want to do the same for ObjectArray1d.  If you register
+        #   your classes as ABCs you can do this in one foul swoop!
+        iul = None
+        ite = None
+        for i, b in enumerate(bases):
+            if issubclass(b, _TypeEnforcer):
+                ite = i
+            if issubclass(b, UserList):
+                iul = i
+
+        if iul is None:
+            return bases
+
+        if ite > iul:
+            # _TypeEnforcer is after UserList in inheritance order
+            _bases = list(bases)
+            _bases.insert(iul, _bases.pop(ite))
+            return tuple(bases)
+
+        return bases
 
 
 # alias
@@ -130,28 +139,39 @@ class _TypeEnforcer(object):
     _item_types = (object, )    # placeholder
 
     def __init__(self, items):
-        super().__init__(self.checked_types(items))
+        super().__init__(self.checks_type(items))
 
-    def checked_types(self, itr):
+    def checks_type(self, itr, raises=None, warns=None, silent=None):
+        """Generator that checks types"""
+        if raises is warns is silent is None:
+            raises = True   # default behaviour : raise TypeError
+
+        if raises:
+            emit = bork(TypeError)
+        elif warns:
+            emit = warnings.warn
+        elif silent:
+            emit = _echo  # silently ignore
+
         for i, obj in enumerate(itr):
-            self.check_type(obj, i)
+            self.check_type(obj, i, emit)
             yield obj
 
-    def check_type(self, obj, i):
+    def check_type(self, obj, i='', emit=bork(TypeError)):
+        """Type checker"""
         if not isinstance(obj, self._item_types):
             many = len(self._item_types) > 1
-            raise TypeError(
-                f'Items contained in {self.__class__.__name__!r} must derive '
-                f'from {"one of" if many else ""}'
-                f'{self._item_types[[0, slice(None)][many]]}. '
-                f'Item {i} is of type {type(obj)!r}.')
+            emit(f'Items contained in {self.__class__.__name__!r} must derive '
+                 f'from {"one of" if many else ""}'
+                 f'{self._item_types[[0, slice(None)][many]]}. '
+                 f'Item {i}{" " * bool(i)}is of type {type(obj)!r}.')
 
     def append(self, item):
         self.check_type(item, len(self))
         super().append(item)
 
     def extend(self, itr):
-        super().extend(self.checked_types(itr))
+        super().extend(self.checks_type(itr))
 
 
 class ReprContainer(object):
@@ -282,8 +302,8 @@ class ReprContainerMixin(object):
     """
     If you inherit from this class, add
     >>> self._repr = ReprContainer(self)
-    to your `__init__` method., nd add  whatever option you want for the
-    representation.  If your container is an attribute of another class, use
+    to your `__init__` method, and add  whatever option you want for the
+    representation. If your container is an attribute of another class, use
     >>> self._repr = ReprContainer(self.data)
     where 'self.data' is the container you want to represent
     """
@@ -298,7 +318,7 @@ class ReprContainerMixin(object):
     # def pprint(self):
 
 
-class ItemGetter(object):
+class ItemGetter(object):  # ItemVectorGetter ?
     """
     Container that supports vectorized item getting like numpy arrays
     """
