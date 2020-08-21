@@ -3,6 +3,10 @@ Recipes involving dictionaries
 """
 
 # std libs
+import warnings
+import types
+import re
+from ..string import match_brackets
 import numbers
 from collections import Callable, UserDict, OrderedDict, MutableMapping
 
@@ -88,7 +92,8 @@ def _pformat(dict_, converter=str, brackets='{}', sep=':', post_sep_space=0,
         s += '{}{: <{}s}{} '.format(space, k, w, sep)
         ws = ' ' * (w + bs + 2)
         if isinstance(v, dict):
-            ds = _pformat(v, converter, brackets, sep, post_sep_space, item_sep)
+            ds = _pformat(v, converter, brackets, sep,
+                          post_sep_space, item_sep)
         else:
             ds = converter(v)
 
@@ -99,10 +104,6 @@ def _pformat(dict_, converter=str, brackets='{}', sep=':', post_sep_space=0,
         s += ['%s\n' % item_sep, brackets[1]][i == last]
 
     return s
-
-
-def pprint(dict_):
-    print(pformat(dict_))
 
 
 class Pprinter(object):
@@ -338,7 +339,7 @@ class Record(Indexable, OrderedAttrDict):
 class TransDict(UserDict):
     """
     A many to one mapping. Provides a generic way of translating keywords to
-    their intended meaning.  Good for coders with bad memory. May be
+    their intended meaning. Good for human coders with flaky memory. May be
     confusing to the uninitiated, so use with discretion.
 
     Examples
@@ -349,32 +350,32 @@ class TransDict(UserDict):
 
     def __init__(self, dic=None, **kwargs):
         super().__init__(dic, **kwargs)
-        self._map = {}
+        self._translated = {}
 
     def add_translations(self, dic=None, **kwargs):
         """enable on-the-fly shorthand translation"""
         dic = dic or {}
-        self._map.update(dic, **kwargs)
+        self._translated.update(dic, **kwargs)
 
     # alias
-    add_vocab = add_translations
+    add_trans = add_vocab = add_translations
 
     def __contains__(self, key):
-        return super().__contains__(self._map.get(key, key))
+        return super().__contains__(self._translated.get(key, key))
 
     def __missing__(self, key):
         """if key not in keywords, try translate"""
-        return self[self._map[key]]
+        return self[self._translated[key]]
 
-    def allkeys(self):
-        # TODO: Keysview**
-        return flatiter((self.keys(), self._map.keys()))
+    # def allkeys(self):
+    #     # TODO: Keysview**
+    #     return flatiter((self.keys(), self._translated.keys()))
 
     def many2one(self, many2one):
         # self[one]       # error check
         for many, one in many2one.items():
             for key in many:
-                self._map[key] = one
+                self._translated[key] = one
 
 
 class Many2OneMap(TransDict):
@@ -382,35 +383,59 @@ class Many2OneMap(TransDict):
     Expands on TransDict by adding equivalence mapping functions for keywords
     """
 
+    warn = True
+
     def __init__(self, dic=None, **kwargs):
         super().__init__(dic, **kwargs)
         # equivalence mappings - callables that return the desired item
         self._mappings = []
-
-    def add_mapping(self, func):
-        self._mappings.append(func)
 
     def __missing__(self, key):
         try:
             # try translate with vocab
             return super().__missing__(key)
         except KeyError as err:
-            # try translate with equivalence maps
-            for func in self._mappings:
-                resolved = func(key)
+            for resolved in self._loop_mappings(key):
                 if super().__contains__(resolved):
                     return self[resolved]
-            raise err
+            raise err from None
 
+    def add_mapping(self, func):
+        if not isinstance(func, Callable):
+            raise ValueError(f'{func} object is not callable')
+        self._mappings.append(func)
+
+    def add_mappings(self, *funcs):
+        for func in funcs:
+            self.add_mapping(func)
+
+    def _loop_mappings(self, key):
+        # try translate with equivalence maps
+        for func in self._mappings:
+            try:
+                yield func(key)
+            except Exception as err:
+                if self.warn:
+                    warnings.warn(
+                        f'Equivalence mapping function failed with:\n{err!s}')
+
+    def resolve(self, key):
+        # try translate with vocab
+        resolved = self._translated.get(key, key)
+        if resolved in self:
+            return resolved
+        
+        # resolve by looping through mappings    
+        for resolved in self._loop_mappings(key):
+            if resolved in self:
+                return resolved
+        
     def __contains__(self, key):
         if super().__contains__(key):
             return True  # no translation needed
 
-        for func in self._mappings:
-            # try:
-            return super().__contains__(func(key))
-            # except:
-            #     pass
+        for resolved in self._loop_mappings(key):
+            return super().__contains__(resolved)
 
         return False
 
@@ -468,3 +493,116 @@ class DefaultOrderedDict(OrderedDict):
         return '%s(%s, %s)' % (self.__class__.__name__,
                                self.default_factory,
                                OrderedDict.__repr__(self))
+
+
+def SENTINEL():
+    pass
+
+
+class TerseKws(object):
+    """
+    Class to assist many-to-one keyword mappings
+    """
+
+    def __init__(self, pattern, answer=None):
+        """
+
+        Parameters
+        ----------
+        pattern
+        answer
+        """
+        regex = ''
+        self.answer = ''
+        self.pattern = pattern
+        sub = pattern
+        while 1:
+            s, (i0, i1) = match_brackets(sub, '[]', return_index=True)
+            # print(s, i0, i1)
+            if s is None:
+                regex += sub
+                break
+
+            regex += f'{sub[:i0]}[{s}]{{0,{len(s)}}}'
+            self.answer += sub[:i0]
+            sub = sub[i1 + 1:]
+
+            # print(sub, regex)
+            # i += 1
+        self.regex = re.compile(regex)
+
+        if answer:
+            self.answer = answer  # str(answer)
+
+    def __call__(self, s):
+        if self.regex.fullmatch(s):
+            return self.answer
+        # return SENTINEL singleton here instead of None since None
+        # could be a valid dict entry
+        return SENTINEL
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}({self.pattern} --> {self.answer})'
+
+
+class KeywordResolver(object):
+    """Helper class for resolving terse keywords"""
+
+    # TODO: as a decorator!!
+    # TODO: detect ambiguous mappings
+    # TODO: expand to handle arbitrary (non-keyword) mappings
+
+    def __init__(self, mappings):
+        self.mappings = []
+        for k, v in mappings.items():
+            # if isinstance(k, str)
+
+            self.mappings.append(TerseKws(k, v))
+
+    def __repr__(self):
+        return repr(self.mappings)
+
+    # def __call__(self,func):
+    #     self.func = func
+
+    def resolve(self, func, kws, namespace=None):
+        """
+        map terse keywords in `kws` to their full form. 
+        If given, values from the `namespace` dict replace those in kws
+        if their corresponging keywords are valid parameter names for `func` 
+        and they are non-default values
+        """
+        # get arg names and defaults
+        # TODO: use inspect.signature here ?
+        code = func.__code__
+        defaults = func.__defaults__
+        arg_names = code.co_varnames[1:code.co_argcount]
+
+        # load the defaults / passed args
+        n_req_args = len(arg_names) - len(defaults)
+        # opt_arg_names = arg_names[n_req_args:]
+
+        args_dict = {}
+        # now get non-default arguments (those passed by user)
+        if namespace is not None:
+            for i, o in enumerate(arg_names[n_req_args:]):
+                v = namespace[o]
+                if v is not defaults[i]:
+                    args_dict[o] = v
+
+        # resolve terse kws and add to dict
+        for k, v in kws.items():
+            if k not in arg_names:
+                for m in self.mappings:
+                    if m(k) in arg_names:
+                        args_dict[m(k)] = v
+                        break
+                else:
+                    # get name
+                    name = func.__name__
+                    if isinstance(func, types.MethodType):
+                        name = f'{func.__self__.__class__.__name__}.{name}'
+                    raise KeyError(
+                        f'{k!r} is not a valid keyword for {name!r}')
+
+        return args_dict
