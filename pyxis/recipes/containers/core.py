@@ -2,16 +2,16 @@
 Container magic
 """
 
+from collections import OrderedDict
 from recipes.decor import raises as bork
 import warnings
 import abc
-from collections import UserList
+import collections as col
 import numbers
 from .dicts import DefaultOrderedDict
 import itertools as itt
 import operator as op
 import inspect
-from collections import Callable
 import functools as ftl
 
 import numpy as np
@@ -19,6 +19,11 @@ import numpy as np
 from recipes.logging import LoggingMixin
 from .sets import OrderedSet
 from .dicts import pformat
+
+
+SELECT_LOGIC = {'AND': np.logical_and,
+                 'OR': np.logical_or,
+                 'XOR': np.logical_xor}
 
 
 def is_property(v):
@@ -50,7 +55,7 @@ def str2tup(keys):
 #         return tuple(map(getter, attrs))
 #     return fn
 
-class SelfAwareContainer(object):   # recipes.oo.SelfAware ???
+class SelfAwareContainer:   # recipes.oo.SelfAware ???
     """
     A mixin class for containers that bypasses object initialization if the
     first argument to the initializer is an object of the same class,
@@ -74,54 +79,144 @@ class SelfAwareContainer(object):   # recipes.oo.SelfAware ???
 class OfTypes(abc.ABCMeta):
     """
     Factory that creates TypeEnforcer classes. Allows for the following usage
-    pattern: 
+    pattern:
     >>> class Container(UserList, OfTypes(int)): pass
-    which creates a container class `Container` that will only allow integer 
+    which creates a container class `Container` that will only allow integer
     items inside. This constructor assigns a tuple of allowed types as class
-     attribute `_item_types`
+     attribute `_allowed_types`
     """
 
     # NOTE: inherit from ABCMeta to avoid metaclass conflict with UserList which
     # has metaclass abc.ABCMeta
 
-    def __new__(mcs, *args):
+    def __new__(cls, *args):
 
         if isinstance(args[0], str):
             # This results from an internal call during class construction
             name, bases, attrs = args
             # create class
-            return super().__new__(mcs, name, mcs.reorder_bases(bases), attrs)
+            return super().__new__(cls, name, cls.make_bases(name, bases), attrs)
 
         # we are here if invoked by direct call:
         # cls = OfTypes(int)
 
-        # create TypeEnforcer class. args gives allowed types
-        # `_item_types` class attribute set to tuple of allowed types
-        return super().__new__(mcs, 'TypeEnforcer', (_TypeEnforcer,),
-                               {'_item_types': tuple(args)})
+        # create TypeEnforcer class that inherits from _TypeEnforcer.
+        # args gives allowed types for this container.
+        # `_allowed_types` class attribute set to tuple of allowed types
 
-    @staticmethod
-    def reorder_bases(bases):
-        # sneakily place `_TypeEnforcer` ahead of `UserList` in the inheritance
-        # order so that type checking happens on init.
+        # check arguments are given and class objects
+        if len(args) == 0:
+            raise ValueError(f'{cls.__name__!r}s constructor requires at least '
+                             'one argument: the allowed type(s)')
+        for kls in args:
+            if not isinstance(kls, type):
+                raise TypeError(f'Arguments to {cls.__name__!r} constructor '
+                                'should be classes')
+
+        return super().__new__(cls, 'TypeEnforcer', (_TypeEnforcer,),
+                               {'_allowed_types': tuple(args)})
+
+    @classmethod
+    def make_bases(cls, name, bases):
+        # sneakily place `_TypeEnforcer` ahead of `Container` types in the
+        # inheritance order so that type checking happens on __init__ of classes
+        # with this metaclass
+
         # TODO: might want to do the same for ObjectArray1d.  If you register
         #   your classes as ABCs you can do this in one foul swoop!
-        iul = None
-        ite = None
-        for i, b in enumerate(bases):
-            if issubclass(b, _TypeEnforcer):
-                ite = i
-            if issubclass(b, UserList):
-                iul = i
 
-        if iul is None:
+        # also check if there is another TypeEnforcer in the list of bases and
+        # make sure the `_allowed_types` are consistent - if any is a subclass
+        # of a type in the already defined `_allowed_types` higher up
+        # TypeEnforcer this is allowed, else raise TypeError since it will lead
+        # to type enforcement being done for different types at different levels
+        # in the class heirarchy
+        ite = None
+        ic = None
+        currently_allowed_types = []
+        # enforcers = []
+        # base_enforcers = []
+        # indices = []
+        # new_bases = list(bases)
+        for i, base in enumerate(bases):
+            if issubclass(base, col.Container):
+                ic = i
+
+            if isinstance(base, cls):
+                # _TypeEnforcer !
+                requested_allowed_types = base._allowed_types
+                ite = i
+
+            # look for other `_TypeEnforcer`s in the inheritance diagram so we
+            # consolidate the type checking
+            for bb in base.__bases__:
+                if isinstance(bb, cls):
+                    # this is a `_TypeEnforcer` base
+                    currently_allowed_types.extend(bb._allowed_types)
+                    # base_enforcers.append(bb)
+                    # original_base = base
+
+        # print('=' * 80)
+        # print(name, bases)
+        # print('requested', requested_allowed_types)
+        # print('current', currently_allowed_types)
+
+        # deal with multiple enforcers
+        # en0, *enforcers = enforcers
+        # ite, *indices = indices
+        # if len(enforcers) > 0:
+        #     # multiple enforcers defined like this:
+        #     # >>> class Foo(list, OfType(int), OfType(float))
+        #     # instead of like this:
+        #     # >>> class Foo(list, OfType(int, float))
+        #     # merge type checking
+        #     warnings.warn(f'Multiple `TypeEnforcer`s in bases of {name}. '
+        #                   'Please use `OfType(clsA, clsB)` to allow multiple '
+        #                   'types in your containers')
+
+        #     for i, ix in enumerate(indices):
+        #         new_bases.pop(ix - i)
+
+        # consolidate allowed types
+        if currently_allowed_types:
+            # new_allowed_types = []
+            # loop through currently allowed types
+            for allowed in currently_allowed_types:
+                for new in requested_allowed_types:
+                    if issubclass(new, allowed):
+                        # type restriction requested is a subclass of already
+                        # existing restriction type.  This means we narrow the
+                        # restriction to the new (subclass) type
+                        # new_allowed_types.append(new)
+                        break
+                    else:
+                        # requested restriction is a new type unrelated to
+                        # existing restriction
+                        raise TypeError(
+                            f'Multiple type restrictions ({new}, {allowed}) '
+                            'requested in different bases of container class '
+                            f'{name}.')  # To allow multiple
+            #     else:
+            #         new_allowed_types.append(allowed)
+            # #
+            # print('new', new_allowed_types)
+            # print('new_bases', new_bases)
+
+        #     bases = tuple(new_bases)
+        # else:
+        #     # set new allowed types
+        #     bases[ite]._allowed_types = requested_allowed_types
+
+        if (ite is None) or (ic is None):
             return bases
 
-        if ite > iul:
-            # _TypeEnforcer is after UserList in inheritance order
+        if ic < ite:
+            # _TypeEnforcer is before UserList in inheritance order so that
+            # types get checked before initialization of the `Container`
             _bases = list(bases)
-            _bases.insert(iul, _bases.pop(ite))
-            return tuple(bases)
+            _bases.insert(ic, _bases.pop(ite))
+            # print('new_bases', _bases)
+            return tuple(_bases)
 
         return bases
 
@@ -130,13 +225,12 @@ class OfTypes(abc.ABCMeta):
 OfType = OfTypes
 
 
-class _TypeEnforcer(object):
-    # TODO: inherit from abc.ABC / abc.Container
+class _TypeEnforcer:
     """
     Item type checking mixin for list-like containers
     """
 
-    _item_types = (object, )    # placeholder
+    _allowed_types = (object, )    # placeholder
 
     def __init__(self, items):
         super().__init__(self.checks_type(items))
@@ -159,11 +253,11 @@ class _TypeEnforcer(object):
 
     def check_type(self, obj, i='', emit=bork(TypeError)):
         """Type checker"""
-        if not isinstance(obj, self._item_types):
-            many = len(self._item_types) > 1
-            emit(f'Items contained in {self.__class__.__name__!r} must derive '
-                 f'from {"one of" if many else ""}'
-                 f'{self._item_types[[0, slice(None)][many]]}. '
+        if not isinstance(obj, self._allowed_types):
+            many = len(self._allowed_types) > 1
+            ok = tuple(map(str, self._allowed_types))[[0, slice(None)][many]]
+            emit(f'Items in container class {self.__class__.__name__!r} must '
+                 f'derive from {"one of" if many else ""} {ok}. '
                  f'Item {i}{" " * bool(i)}is of type {type(obj)!r}.')
 
     def append(self, item):
@@ -174,7 +268,7 @@ class _TypeEnforcer(object):
         super().extend(self.checks_type(itr))
 
 
-class ReprContainer(object):
+class ReprContainer:
     """
     Flexible string representation for list-like containers.  This object can
     act as a replacement for the builtin `__repr__` or `__str__` methods.
@@ -298,7 +392,7 @@ class ReprContainer(object):
         return self.sep.join(map(str, (map(self.item_str, items))))
 
 
-class ReprContainerMixin(object):
+class ReprContainerMixin:
     """
     If you inherit from this class, add
     >>> self._repr = ReprContainer(self)
@@ -318,7 +412,7 @@ class ReprContainerMixin(object):
     # def pprint(self):
 
 
-class ItemGetter(object):  # ItemVectorGetter ?
+class ItemGetter:  # ItemGetterMixin ?
     """
     Container that supports vectorized item getting like numpy arrays
     """
@@ -332,29 +426,43 @@ class ItemGetter(object):  # ItemVectorGetter ?
     @classmethod
     def get_returned_type(cls):
         """
-        Return the class that wraps objects returned by __getitem__.  
-        Default is to return this class itself, so that 
+        Return the class that wraps objects returned by __getitem__.
+        Default is to return this class itself, so that
         `type(obj[[1]]) == type(obj)`
 
-        This is useful for subclasses that overwrite `__init__` and don't 
+        This is useful for subclasses that overwrite `__init__` and don't
         want re-run initialization code
         """
         return cls._returned_type or cls
 
     def __getitem__(self, key):
         getitem = super().__getitem__
-        if isinstance(key, numbers.Integral):
-            # single item retrieval
+        #
+        if (isinstance(key, numbers.Integral)
+                and not isinstance(key, (bool, np.bool))):
             return getitem(key)
-        elif isinstance(key, list):
-            # if multiple item retrieval
+
+        if isinstance(key, (slice, type(...))):
+            items = getitem(key)
+
+        elif isinstance(key, (list, tuple)):
+            # if multiple item retrieval vectorizer!
             items = [getitem(k) for k in key]
+
         elif isinstance(key, np.ndarray):
             if key.ndim != 1:
                 raise ValueError('Only 1D indexing arrays are allowed')
-            items = [getitem(k) for k in key]
+            if key.dtype.kind == 'b':
+                key, = np.where(key)
+            if key.dtype.kind == 'i':
+                items = [getitem(k) for k in key]
+            else:
+                raise ValueError(
+                    'Index arrays should be of type float or bool')
         else:
             raise TypeError('Invalid index type %r' % type(key))
+
+        # wrap in required type
         return self.get_returned_type()(items)
 
 
@@ -371,13 +479,13 @@ class ContainerWrapper(ItemGetter):
         return len(self.data)
 
 
-class ObjectArray1D(ItemGetter):
+class ArrayLike1D(ItemGetter, col.UserList):
     """
-    A container class where the main container is a 1D numpy object array
+    A container class where the that emulates a one dimensional numpy array,
     providing all the array slicing niceties.
 
     Provides the following list-like functionality:
-    >>> c = ObjectArray1D([1, 2, 3])
+    >>> c = ArrayLike1D([1, 2, 3])
     >>> three = c.pop(-1)
     >>> c.append(id)
     >>> c.extend(['some', 'other', object])
@@ -396,37 +504,66 @@ class ObjectArray1D(ItemGetter):
     need vectorized item getting as well as support for having array-like
     objects in you container, inherit from `UserList` and `ItemGetter`
     """
-
-    # TODO: what if i want a different name for my container?
-    # TODO: __slots__
-
-    def __init__(self, items):
-        self.data = np.array(items, dtype='O')
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, key):
-        items = self.data[key]
-        if isinstance(key, numbers.Integral):
-            return items
-
-        # if multiple items from the container was retrieved
-        return self.get_returned_type()(items)
-
-    def pop(self, i):
-        return np.delete(self.data, i)
-
-    def append(self, item):
-        # todo: type enforcement
-        self.data = np.append(self.data, [item])
-
-    def extend(self, itr):
-        # todo: type enforcement
-        self.data = np.hstack([self.data, list(itr)])
+    pass
 
 
-class MethodCaller(object):
+# class ObjectArray1D(ItemGetter):
+#     # NOTE: DEPRECATED
+#     """
+#     A container class where the main container is a 1D numpy object array
+#     providing all the array slicing niceties.
+
+#     Provides the following list-like functionality:
+#     >>> c = ObjectArray1D([1, 2, 3])
+#     >>> three = c.pop(-1)
+#     >>> c.append(id)
+#     >>> c.extend(['some', 'other', object])
+#     multi-index slicing ala numpy
+#     >>> c[[0, 3, 5]]    # [1, <function id(obj, /)>, 'other']
+
+#     Attributes
+#     ----------
+#     data: np.ndarray
+#         The object container
+
+#     Note
+#     ----
+#     The append and extend methods will not work when appending array-like
+#     objects since numpy will (try to) flatten them before appending.  If you
+#     need vectorized item getting as well as support for having array-like
+#     objects in you container, inherit from `UserList` and `ItemGetter`
+#     """
+
+#     # TODO: what if i want a different name for my container?
+#     # TODO: __slots__
+
+#     def __init__(self, items):
+#         self.data = np.array(items, dtype='O')
+
+#     def __len__(self):
+#         return len(self.data)
+
+#     def __getitem__(self, key):
+#         items = self.data[key]
+#         if isinstance(key, numbers.Integral):
+#             return items
+
+#         # if multiple items from the container was retrieved
+#         return self.get_returned_type()(items)
+
+#     def pop(self, i):
+#         return np.delete(self.data, i)
+
+#     def append(self, item):
+#         # todo: type enforcement
+#         self.data = np.append(self.data, [item])
+
+#     def extend(self, itr):
+#         # todo: type enforcement
+#         self.data = np.hstack([self.data, list(itr)])
+
+
+class MethodCaller:
     """
     This is adapted from `operator.methodcaller`. The code below is copied
     verbatim from 'operator.py' (since you can't inherit from
@@ -475,7 +612,7 @@ class MethodCaller(object):
 # MethodCaller.__doc__ += op.methodcaller.__doc__.replace('methodcaller', 'MethodCaller')
 
 
-class CallVectorizer(object):
+class CallVectorizer:
     """Vectorized method calls on items in a container"""
 
     def __init__(self, container):
@@ -494,7 +631,7 @@ class CallVectorizer(object):
             return ftl.partial(self, key)
 
 
-class AttrMapper(object):
+class AttrMapper:
     """
     This is a mixin class for containers that allows getting attributes from
     the objects in the container. i.e vectorized attribute lookup across
@@ -532,15 +669,14 @@ class AttrMapper(object):
         keys: str, or tuple of str
             Each of the items in `keys` must be a string pointing to
             and attribute name on the contained object.
-            Chaining attribute  lookup via '.'-separated strings is also
+            Chaining the attribute lookup via '.'-separated strings is also
             permitted.  eg:. 'hello.world' will look up the 'world' attribute
-            on the object in the 'hello' slot for each of the items in the
-            container.
-
+            on the 'hello' attribute for each of the items in the container.
 
         Returns
         -------
-
+        list or list of tuples
+            The attribute values for each object in the container and each key
         """
 
         return list(self.attrs_gen(*keys))
@@ -548,30 +684,54 @@ class AttrMapper(object):
     def attrs_gen(self, *keys):
         yield from map(op.attrgetter(*keys), self)
 
-    def set_attrs(self, **kws):
+    def set_attrs(self, each=False, **kws):
         """
-        Set attributes
+        Set attributes on the items in the container.
 
         Parameters
         ----------
-        keys: container or iterable
-            attribute names to be set.  can be chained '_.like.this'
-        values: container or iterable
-            values to be assigned
-        kws:
-            (key, values) as defined above
+        kws: dict
+            (attribute, value) pairs to be assigned on each item in the
+            container.  Attribute names can be chained 'like.this' to set values
+            on deeply nested objects in the container.
+
+        each: bool
+            Use this switch when passing iterable values to set each item in the
+            value sequence to the corresponding item in the container.  In this
+            case, each value iterable must have the same length as the container
+            itself.
+
+
+        Examples
+        --------
+        >>> mylist.set_attrs(**{'hello.world': 1})
+        >>> mylist[0].hello.world == mylist[1].hello.world == 1
+        True
+        >>> mylist.set_attrs(each=True, foo='12')
+        >>> (mylist[0].foo == '1') and (mylist[1].foo == '2')
+        True
         """
 
         # kws.update(zip(keys, values)) # check if sequences else error prone
-        for key, val in kws.items():
+        get_value = itt.repeat
+        if each:
+            get_value = _echo
+
+            # check values are same length as container before we attempt to set
+            # any attributes
+            if set(map(len, kws.values())) != len(self):
+                raise ValueError('Not all values are the same length as the '
+                                 'container while `each` has been set.')
+
+        for key, value in kws.items():
             *chained, attr = key.rsplit('.', 1)
-            if len(chained):
+            if chained:
                 get_parent = op.attrgetter(chained[0])
             else:
                 get_parent = _echo
 
-            for o in self:
-                setattr(get_parent(o), attr, val)
+            for obj, val in zip(self, get_value(value)):
+                setattr(get_parent(obj), attr, val)
 
     def calls(self, name, *args, **kws):
         # TODO: replace with CallVectorizer.  might have to make that a
@@ -597,186 +757,173 @@ class AttrMapper(object):
         return len(set(self.attrs(*keys))) > 1
 
 
-class AttrTable(object):
+class AttrProp:
     """
-    Abstraction layer that can group, split and merge multiple data sets
+    Descriptor for vectorized attribute getting on `AttrMapper` subclasses.
+
+    Example
+    -------
+    The normal property definition for getting attributes on contained items
+    >>> class Example:
+    ...     @property
+    ...     def stems(self):
+    ...         return self.attrs('stem')
+
+    Can now be written as
+    >>> class Example:
+    ...     stems = AttrProp('stems')
+
+
+    A more complete (although somewhat contrived) example
+    >>> class Simple:
+    ...     def __init__(self, b):
+    ...         self.b = b.upper()
+    ...
+    ... class ContainerOfSimples(UserList, OfTypes(Simple), AttrMapper):
+    ...     def __init__(self, images=()):
+    ...         # initialize container
+    ...         super().__init__(images)
+    ...
+    ...         # properties: vectorized attribute getters on `images`
+    ...         bees = AttrProp('b')
+    ...  
+    ... cs = ContainerOfSimples(map(Simple, 'hello!'))
+    ... cs.bees
+    ['H', 'E', 'L', 'L', 'O', '!']
     """
 
-    def _get_input(self, obj):
+    def __init__(self, name, convert=_echo):
+        self.name = name
+        self.convert = convert
+
+    def __get__(self, obj, kls=None):
         if obj is None:
-            return dict()
+            # class attribute lookup
+            return self
 
-        if isinstance(obj, dict):
-            return obj
+        # instance attribute lookup
+        return self.convert(obj.attrs(self.name))
 
-        return dict(zip(self.attrs, obj))  # TODO : ordered dict better
 
-    def __init__(self, attrs, column_headers=None, formatters=None, **kws):
+class Grouped(OrderedDict):
+    """
+    Emulates dict to hold multiple container instances keyed by their
+    common attribute values. The attribute names given in group_id are the
+    ones by which the run is separated into segments (which are also container
+    instances).
+    """
 
-        self.attrs = list(attrs)
-        self.kws = kws  # set default keywords here
+    group_id = ()
 
-        self.formatters = self._get_input(formatters)
-        self.headers = self._get_input(column_headers)
+    # This class should never be instantiated directly, only by the new_group
+    # method of AttrGrouper, which sets `group_id`
 
-        self.headers = dict(zip(attrs, self.get_headers(attrs)))
-
-        # set default options for table
-        for key, val in dict(row_nrs=0,
-                             precision=5,
-                             minimalist=True,
-                             compact=True,
-                             ).items():
-            self.kws.setdefault(key, val)
-
-    def __call__(self, container, attrs=None, **kws):
+    def __init__(self, factory, *args, **kws):
         """
-        Print the table of attributes for this container as a table.
+        note: the init arguments here do not do what you they normally do for
+        the construction of a dict-like object. Objects of this type are
+        always instantiated empty. This class should never be
+        instantiated directly with keywords from the user, only by the
+        new_group  method of AttrGrouper.
+        `keys` and `kws` are the "context" by which the grouping is done.
+        Keep track of this so we have this info available later for pprint
+        and optimization
+        """
+
+        if not callable(factory):
+            raise TypeError('Factory (first argument) must be a callable')
+        self.factory = factory
+
+        super().__init__(*args, **kws)
+
+    # def make_container(self):
+    #    monkey patch containers with grouping context?
+
+    def __repr__(self):
+        return pformat(self, self.__class__.__name__)
+
+    def to_list(self):
+        """
+        Concatenate values to container.  Container type is determined by
+        `default_factory`
+        """
+        # construct container
+        list_like = self.factory()
+        # filter None since we use that to represent empty group
+        for obj in filter(None, self.values()):
+            list_like.extend(obj)
+        return list_like
+
+    def group_by(self, *keys, return_index=False, **kws):
+        # logic='AND'
+        """
+        (Re-)group by attributes
 
         Parameters
         ----------
-        attrs: array_like, optional
-            Attributes of the instance that will be printed in the table.
-            defaults to the list given upon initialization of the class.
-        **kws:
-            Keyword arguments passed directly to the `motley.table.Table`
-            constructor.
+        keys
 
         Returns
         -------
 
-
         """
-        if not hasattr(container, 'attrs'):
-            raise TypeError('Container does not support vectorized attribute '
-                            'lookup on items.')
+        return self.to_list().group_by(*keys, return_index=return_index, **kws)
 
-        table = self.get_table(container, attrs, **kws)
-        print(table)
-        return table
-
-    def get_table(self, container, attrs=None, **kws):
+    def select_by(self,logic='AND',  **kws):
         """
-        Keyword arguments passed directly to the `motley.table.Table`
-            constructor.
+        Select the files with attribute value pairs equal to those passed as
+        keywords.  Eg: g.select_by(binning='8x8').  Keep the original
+        grouping for the selected files.
+
+        Parameters
+        ----------
+        kws
 
         Returns
         -------
-        `motley.table.Table` instance
+
         """
+        return self.to_list().select_by(logic, **kws).group_by(*self.group_id)
 
-        from motley.table import Table
+    def varies_by(self, *keys):
+        """
+        Check whether the attribute value mapped to by `key` varies across
+        the set of observing runs
 
-        if len(container) == 0:
-            return Table(['Empty'])
+        Parameters
+        ----------
+        key
 
-        if attrs is None:
-            attrs = self.attrs
+        Returns
+        -------
+        bool
+        """
+        values = set()
+        for o in filter(None, self.values()):
+            vals = set(o.attrs(*keys))
+            if len(vals) > 1:
+                return True
+            else:
+                values |= vals
+            if len(values) > 1:
+                return True
+        return False
 
-        # print('BEFORE', kws['formatters'])
-        kws.setdefault('title', container.__class__.__name__)
-        kws.setdefault('col_headers', self.get_headers(attrs))
-        kws.setdefault('formatters', self.get_formatters(attrs))
-        kws.setdefault('col_groups', self.get_col_groups(attrs))
-        # print('AFTER', kws['formatters'])
-
-        kws_ = self.kws.copy()
-        kws_.update(**kws)
-        # print(kws_['total'])
-
-        return Table(container.attrs(*attrs), **kws_)
-
-    def get_headers(self, attrs):
-        heads = []
-        for a in attrs:
-            head = self.headers.get(a, a.split('.')[-1])
-            heads.append(head)
-        return heads
-
-    def get_col_groups(self, attrs):
-        groups = []
-        for a in attrs:
-            parts = a.split('.')
-            groups.append(parts[0] if len(parts) > 1 else '')
-        return groups
-
-    def get_formatters(self, attrs):
-        return [self.formatters.get(a, str) for a in attrs]
-        # fmt = []
-        # for a in attrs:
-        #     # will auto format if no formatter
-        #     if a in self.formatters:
-        #         fmt[self.headers.get(a, a)] = self.formatters[a]
-        #
-        # return fmt
-
-    def add_attr(self, attr, column_header=None, formatter=None):
-
-        if not isinstance(attr, str):
-            raise ValueError('Attribute must be a str')
-
-        # block below will bork with empty containers
-        # obj = self.parent[0]
-        # if not hasattr(obj, attr):
-        #     raise ValueError('%r is not a valid attribute of object of '
-        #                      'type %r' % (attr, obj.__class__.__name__))
-
-        # avoid duplication
-        if attr not in self.attrs:
-            self.attrs.append(attr)
-
-        if column_header is None:
-            column_header = attr  # FIXME split here
-
-        self.headers[attr] = column_header
-        if formatter is not None:
-            self.formatters[column_header] = formatter
-
-
-#
-
-
-def get_sort_values(self, *keys, **kws):
-    vals = []
-    # get value tuples for grouping
-    for key_or_func in keys:
-        # functions given as keywords take precedent over attribute names
-        # when grouping
-        if isinstance(key_or_func, str):
-            vals.append(map(op.attrgetter(key_or_func), self))
-
-        elif isinstance(key_or_func, Callable):
-            vals.append(map(key_or_func, self))
-        else:
-            raise ValueError('Key values must be str (attribute name on '
-                             'item) or callable (evaluated on item).')
-
-    if kws:
-        for fun, val in zip(kws.values(), zip(*self.attrs(*kws.keys()))):
-            vals.append(map(fun, val))
-
-    if not len(vals):
-        raise ValueError('No attribute name(s) or function(s) to sort by.')
-
-    # keys = OrderedSet(keys)
-    # make sure we don't end up with 1-tuples as our group ids when grouping
-    # with single function / attribute
-    unpack = tuple if len(vals) == 1 else zip
-    return list(unpack(*vals))
+    # def filter_duplicates(self):
+    #     if len(set(map(id, self))) == len(self):
+    #         return self  # all items are unique
+    #     #
+    #     return self.__class__(self.factory,
+    #                           *(next(it) for _, it in itt.groupby(self, id)))
 
 
 class AttrGrouper(AttrMapper):
-    # group_id = None
+    """
+    Abstraction layer that can group, split and sort multiple data sets
+    """
 
-    # @property
-    # def group_id(self):
-    #     return self._group_id
-    #
-    # @group_id.setter
-    # def group_id(self, group_id):
-    #     self._group_id = OrderedSet(group_id)
 
-    def new_groups(self):  # , *keys, **kws
+    def new_groups(self, *args, **kws):
         """
         Construct a new group mapping for items in the container.
         Subclasses can overwrite, but whatever is returned by this method
@@ -818,7 +965,7 @@ class AttrGrouper(AttrMapper):
         vals = get_sort_values(self, *keys, **kws)
 
         # use DefaultOrderedDict to preserve order among groups
-        groups = self.new_groups()  # keys, **kws
+        groups = DefaultOrderedDict(self.__class__)  # keys, **kws
         groups.group_id = keys, kws
         indices = DefaultOrderedDict(list)
 
@@ -838,13 +985,16 @@ class AttrGrouper(AttrMapper):
                 groups[a].append(item)
                 indices[a].append(i)
 
+        g = self.new_groups()
+        g.update(groups)
+
         if return_index:
-            return groups, indices
-        return groups
+            return g, indices
+        return g
 
     def sort_by(self, *keys, **kws):
         """
-        Sort the cubes by the value of attributes given in keys,
+        Sort the items by the value of attributes given in keys,
         kws can be (attribute, callable) pairs in which case sorting will be
          done according to value returned by callable on a given attribute.
         """
@@ -858,152 +1008,57 @@ class AttrGrouper(AttrMapper):
         # so this function may not work as expected for sorting on multiple
         # attributes.
         # see: https://docs.python.org/3/whatsnew/3.6.html
-        idx, svals = zip(*sorted(enumerate(vals), key=op.itemgetter(1)))
+        idx, _ = zip(*sorted(enumerate(vals), key=op.itemgetter(1)))
         return self[list(idx)]
 
+    def select_by(self, logic='AND', **kws):
 
-class Grouped(DefaultOrderedDict):
-    """
-    Emulates dict to hold multiple container instances keyed by their
-    common attribute values. The attribute names given in group_id are the
-    ones by which the run is separated into segments (which are also container
-    instances).
-    """
+        logic = SELECT_LOGIC[logic.upper()]
 
-    group_id = None
+        selection = np.ones(len(self))
+        for att, seek in kws.items():
+            vals = self.attrs(att)
+            if not callable(seek):
+                seek = seek.__eq__
 
-    # This class should never be instantiated directly, only by the new_group
-    # method of AttrGrouper, which sets `group_id`
-
-    # def __init__(self, default_factory=None, *keys, **kws):
-    #     """
-    #     note: the init arguments here do not do what you they normally do for
-    #     the construction of a dict-like object. Objects of this type are
-    #     always instantiated empty. This class should never be
-    #     instantiated directly with keywords from the user, only by the
-    #     new_group  method of AttrGrouper.
-    #     `keys` and `kws` are the "context" by which the grouping is done.
-    #     Keep track of this so we have this info available later for pprint
-    #     and optimization
-    #     """
-    #     super().__init__(default_factory)
-    #     self._keys = keys
-    #     self._kws = kws
-
-    # def make_container(self):
-    #    monkey patch containers with grouping context?
-
-    def __repr__(self):
-        return pformat(self, self.__class__.__name__)
-
-    def to_list(self):
-        """
-        Concatenate values to container.  Container type is determined by
-        `default_factory`
-        """
-        # construct container
-        list_like = self.default_factory()
-        # filter None since we use that to represent empty group
-        for obj in filter(None, self.values()):
-            list_like.extend(obj)
-        return list_like
-
-    def group_by(self, *keys, return_index=False, **kws):
-        # logic='AND', **kws)
-        """
-        (Re-)group by attributes
-
-        Parameters
-        ----------
-        keys
-
-        Returns
-        -------
-
-        """
-        return self.to_list().group_by(*keys, return_index=return_index, **kws)
-
-    def varies_by(self, *keys):
-        """
-        Check whether the attribute value mapped to by `key` varies across
-        the set of observing runs
-
-        Parameters
-        ----------
-        key
-
-        Returns
-        -------
-        bool
-        """
-        values = set()
-        for o in filter(None, self.values()):
-            vals = set(o.attrs(*keys))
-            if len(vals) > 1:
-                return True
-            else:
-                values |= vals
-            if len(values) > 1:
-                return True
-        return False
-
-    def select_by(self, **kws):
-        """
-        Select the files with attribute value pairs equal to those passed as
-        keywords.  Eg: g.select_by(binning='8x8').  Keep the original
-        grouping for the selected files.
-
-        Parameters
-        ----------
-        kws
-
-        Returns
-        -------
-
-        """
-        # if bool(keys) == bool(kws):
-        #     raise ValueError('Grouping cannot be done using both attribute '
-        #                      'values *and* function evaluation on attribute '
-        #                      'values. Please pass only `keys` or only `kws` '
-        #                      'to this function (either, not both, not neither)
-        #                      ')
-
-        out = self.__class__()
-
-        # TODO!!!
-
-        for key, obs in self.items():
-            print(obs.attrs(*keys))
-            if obs.attrs(*keys) == value_set:
-                out[key] = obs
-        return out
-
-    def filter_by(self, **kws):
-        # can probably merge with select_by
-        attrs = self.attrs(*kws.keys())
-        funcs = kws.values()
-        def predicate(att): return all(f(at) for f, at in zip(funcs, att))
-        selection = list(map(predicate, attrs))
+            selection = logic(selection, list(map(seek, vals)))
+        #
         return self[selection]
 
-    def filter_duplicates(self):
-        if len(set(map(id, self))) == len(self):
-            return self  # all items are unique
-        #
-        return self.__class__([next(it) for _, it in itt.groupby(self, id)])
+
+def get_sort_values(self, *keys, **kws):
+    vals = []
+    # get value tuples for grouping
+    for key_or_func in keys:
+        # functions given as keywords take precedent over attribute names
+        # when grouping
+        if isinstance(key_or_func, str):
+            vals.append(map(op.attrgetter(key_or_func), self))
+
+        elif isinstance(key_or_func, col.Callable):
+            vals.append(map(key_or_func, self))
+        else:
+            raise ValueError('Key values must be str (attribute name on '
+                             'item) or callable (evaluated on item).')
+
+    if kws:
+        for fun, val in zip(kws.values(), zip(*self.attrs(*kws.keys()))):
+            vals.append(map(fun, val))
+
+    if not len(vals):
+        raise ValueError('No attribute name(s) or function(s) to sort by.')
+
+    # keys = OrderedSet(keys)
+    # make sure we don't end up with 1-tuples as our group ids when grouping
+    # with single function / attribute
+    unpack = tuple if len(vals) == 1 else zip
+    return list(unpack(*vals))
 
 
-class Container(ObjectArray1D, SelfAwareContainer, AttrGrouper,
+class Container(ArrayLike1D, SelfAwareContainer, AttrGrouper,
                 ReprContainerMixin, LoggingMixin):
     """Good container"""
 
-    def __init__(self, list_=None):
-
-        if list_ is None:
-            list_ = []
-
-        # make sure objects derive from _BaseHDU
-        # TypeEnforcer(_BaseHDU)(list_)
-
+    def __init__(self, list_=()):
         # init container
-        ObjectArray1D.__init__(self, list_)
+        ArrayLike1D.__init__(self, list_)
