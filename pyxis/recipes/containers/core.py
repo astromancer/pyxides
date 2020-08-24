@@ -813,7 +813,7 @@ class Grouped(OrderedDict):
     instances).
     """
 
-    group_id = ()
+    group_id = (), {}
 
     # This class should never be instantiated directly, only by the new_group
     # method of AttrGrouper, which sets `group_id`
