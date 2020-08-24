@@ -6,12 +6,9 @@ Recipes involving dictionaries
 import warnings
 import types
 import re
-from ..string import match_brackets
 import numbers
-from collections import Callable, UserDict, OrderedDict, MutableMapping
-
-# relative libs
-from ..iter import flatiter
+from collections import abc, UserDict, OrderedDict
+from ..string import match_brackets
 
 
 # TODO: a factory function which takes requested props, eg: indexable=True,
@@ -64,7 +61,7 @@ def pformat(dict_, name='', converter=str, brackets='{}', sep=':',
 
 def _pformat(dict_, converter=str, brackets='{}', sep=':', post_sep_space=0,
              item_sep=','):
-    assert isinstance(dict_, MutableMapping), 'Object is not a dict'
+    assert isinstance(dict_, abc.MutableMapping), 'Object is not a dict'
 
     if brackets in ('', None):
         brackets = [''] * 2
@@ -401,7 +398,7 @@ class Many2OneMap(TransDict):
             raise err from None
 
     def add_mapping(self, func):
-        if not isinstance(func, Callable):
+        if not callable(func):
             raise ValueError(f'{func} object is not callable')
         self._mappings.append(func)
 
@@ -452,8 +449,7 @@ class IndexableOrderedDict(OrderedDict):
 class DefaultOrderedDict(OrderedDict):
     # Source: http://stackoverflow.com/a/6190500/562769
     def __init__(self, default_factory=None, *a, **kw):
-        if (default_factory is not None and
-                not isinstance(default_factory, Callable)):
+        if (default_factory is not None and not callable(default_factory)):
             raise TypeError('first argument must be callable')
 
         OrderedDict.__init__(self, *a, **kw)
