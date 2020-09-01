@@ -5,8 +5,8 @@ Container magic
 from collections import OrderedDict
 from recipes.decor import raises as bork
 import warnings
-import abc
-import collections as col
+from abc import ABCMeta
+from collections import abc, UserList
 import numbers
 from .dicts import DefaultOrderedDict
 import itertools as itt
@@ -22,8 +22,8 @@ from .dicts import pformat
 
 
 SELECT_LOGIC = {'AND': np.logical_and,
-                 'OR': np.logical_or,
-                 'XOR': np.logical_xor}
+                'OR': np.logical_or,
+                'XOR': np.logical_xor}
 
 
 def is_property(v):
@@ -76,14 +76,14 @@ class SelfAwareContainer:   # recipes.oo.SelfAware ???
         # TODO: test + examples
 
 
-class OfTypes(abc.ABCMeta):
+class OfTypes(ABCMeta):
     """
     Factory that creates TypeEnforcer classes. Allows for the following usage
     pattern:
     >>> class Container(UserList, OfTypes(int)): pass
     which creates a container class `Container` that will only allow integer
     items inside. This constructor assigns a tuple of allowed types as class
-     attribute `_allowed_types`
+    attribute `_allowed_types`
     """
 
     # NOTE: inherit from ABCMeta to avoid metaclass conflict with UserList which
@@ -98,7 +98,7 @@ class OfTypes(abc.ABCMeta):
             return super().__new__(cls, name, cls.make_bases(name, bases), attrs)
 
         # we are here if invoked by direct call:
-        # cls = OfTypes(int)
+        # >>> cls = OfTypes(int)
 
         # create TypeEnforcer class that inherits from _TypeEnforcer.
         # args gives allowed types for this container.
@@ -139,7 +139,7 @@ class OfTypes(abc.ABCMeta):
         # indices = []
         # new_bases = list(bases)
         for i, base in enumerate(bases):
-            if issubclass(base, col.Container):
+            if issubclass(base, abc.Container):
                 ic = i
 
             if isinstance(base, cls):
@@ -255,10 +255,12 @@ class _TypeEnforcer:
         """Type checker"""
         if not isinstance(obj, self._allowed_types):
             many = len(self._allowed_types) > 1
-            ok = tuple(map(str, self._allowed_types))[[0, slice(None)][many]]
+            map_func = op.attrgetter('__name__') # autoreload HACK
+            class_names = map(map_func, self._allowed_types)
+            ok = (next, tuple)[many](class_names)
             emit(f'Items in container class {self.__class__.__name__!r} must '
                  f'derive from {"one of" if many else ""} {ok}. '
-                 f'Item {i}{" " * bool(i)}is of type {type(obj)!r}.')
+                 f'Item {i}{" " * bool(i)} is of type {type(obj)!r}.')
 
     def append(self, item):
         self.check_type(item, len(self))
@@ -418,13 +420,11 @@ class ItemGetter:  # ItemGetterMixin ?
     """
     _returned_type = None
 
-    @classmethod
-    def set_returned_type(cls, obj):
+    def set_returned_type(self, obj):
         """Will change the type returned by __getitem__"""
-        cls._returned_type = obj
+        self._returned_type = obj
 
-    @classmethod
-    def get_returned_type(cls):
+    def get_returned_type(self):
         """
         Return the class that wraps objects returned by __getitem__.
         Default is to return this class itself, so that
@@ -433,7 +433,7 @@ class ItemGetter:  # ItemGetterMixin ?
         This is useful for subclasses that overwrite `__init__` and don't
         want re-run initialization code
         """
-        return cls._returned_type or cls
+        return self._returned_type or self.__class__
 
     def __getitem__(self, key):
         getitem = super().__getitem__
@@ -479,7 +479,7 @@ class ContainerWrapper(ItemGetter):
         return len(self.data)
 
 
-class ArrayLike1D(ItemGetter, col.UserList):
+class ArrayLike1D(ItemGetter, UserList):
     """
     A container class where the that emulates a one dimensional numpy array,
     providing all the array slicing niceties.
@@ -630,6 +630,9 @@ class CallVectorizer:
         else:
             return ftl.partial(self, key)
 
+# def _unpack()
+# unpack = (_echo, list)[isinstance(val, abc.Iterable)]
+
 
 class AttrMapper:
     """
@@ -719,9 +722,13 @@ class AttrMapper:
 
             # check values are same length as container before we attempt to set
             # any attributes
-            if set(map(len, kws.values())) != len(self):
-                raise ValueError('Not all values are the same length as the '
-                                 'container while `each` has been set.')
+            # unpack the keyword values in case they are iterables:
+            kws = dict(zip(kws.keys(), map(list, kws.values())))
+            slen = set(map(len, kws.values()))
+            if (slen - {len(self)}):
+                raise ValueError(
+                    f'Not all values are the same length ({slen}) as the '
+                    f'container {len(self)} while `each` has been set.')
 
         for key, value in kws.items():
             *chained, attr = key.rsplit('.', 1)
@@ -845,13 +852,16 @@ class Grouped(OrderedDict):
     def to_list(self):
         """
         Concatenate values to container.  Container type is determined by
-        `default_factory`
+        `factory` function
         """
         # construct container
         list_like = self.factory()
         # filter None since we use that to represent empty group
         for obj in filter(None, self.values()):
-            list_like.extend(obj)
+            if isinstance(obj, type(list_like)):
+                list_like.extend(obj)
+            else:
+                list_like.append(obj)
         return list_like
 
     def group_by(self, *keys, return_index=False, **kws):
@@ -869,7 +879,7 @@ class Grouped(OrderedDict):
         """
         return self.to_list().group_by(*keys, return_index=return_index, **kws)
 
-    def select_by(self,logic='AND',  **kws):
+    def select_by(self, logic='AND',  **kws):
         """
         Select the files with attribute value pairs equal to those passed as
         keywords.  Eg: g.select_by(binning='8x8').  Keep the original
@@ -921,7 +931,6 @@ class AttrGrouper(AttrMapper):
     """
     Abstraction layer that can group, split and sort multiple data sets
     """
-
 
     def new_groups(self, *args, **kws):
         """
@@ -1035,7 +1044,7 @@ def get_sort_values(self, *keys, **kws):
         if isinstance(key_or_func, str):
             vals.append(map(op.attrgetter(key_or_func), self))
 
-        elif isinstance(key_or_func, col.Callable):
+        elif isinstance(key_or_func, abc.Callable):
             vals.append(map(key_or_func, self))
         else:
             raise ValueError('Key values must be str (attribute name on '
