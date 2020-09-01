@@ -2,6 +2,7 @@
 Container magic
 """
 
+from recipes.iter import first_true_index
 from collections import OrderedDict
 from recipes.decor import raises as bork
 import warnings
@@ -231,31 +232,32 @@ class _TypeEnforcer:
     """
 
     _allowed_types = (object, )    # placeholder
+    _actions = {-1: _echo,          # silently ignore
+                0: warnings.warn,
+                1: bork(TypeError)}
+    emit = _actions[1]         # default
 
-    def __init__(self, items):
+    def __init__(self, items, *, severity=1):
         super().__init__(self.checks_type(items))
+        self.emit = self._actions[int(severity)]
 
     def checks_type(self, itr, raises=None, warns=None, silent=None):
         """Generator that checks types"""
         if raises is warns is silent is None:
-            raises = True   # default behaviour : raise TypeError
-
-        if raises:
-            emit = bork(TypeError)
-        elif warns:
-            emit = warnings.warn
-        elif silent:
-            emit = _echo  # silently ignore
-
+            # default behaviour decided at init (default is to raise TypeError)
+            raises = True
+        
+        emit = self._actions[1 - first_true_index((raises, warns, silent))]
         for i, obj in enumerate(itr):
             self.check_type(obj, i, emit)
             yield obj
 
-    def check_type(self, obj, i='', emit=bork(TypeError)):
+    def check_type(self, obj, i='', emit=None):
         """Type checker"""
         if not isinstance(obj, self._allowed_types):
+            emit = emit or self.emit
             many = len(self._allowed_types) > 1
-            map_func = op.attrgetter('__name__') # autoreload HACK
+            map_func = op.attrgetter('__name__')  # autoreload HACK
             class_names = map(map_func, self._allowed_types)
             ok = (next, tuple)[many](class_names)
             emit(f'Items in container class {self.__class__.__name__!r} must '
