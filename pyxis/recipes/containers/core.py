@@ -2,6 +2,8 @@
 Container magic
 """
 
+from typing import Union, Callable
+from dataclasses import dataclass
 from recipes.iter import first_true_index
 from collections import OrderedDict
 from recipes.decor import raises as bork
@@ -12,12 +14,14 @@ import numbers
 from .dicts import DefaultOrderedDict
 import itertools as itt
 import operator as op
-import inspect
+# import inspect
 import functools as ftl
 
 import numpy as np
 
 from recipes.logging import LoggingMixin
+from recipes.oo import SelfAware
+from recipes.oo.meta import classmaker
 from .sets import OrderedSet
 from .dicts import pformat
 
@@ -31,7 +35,11 @@ def is_property(v):
     return isinstance(v, property)
 
 
-def _echo(_):
+def _echo(*_):
+    return _
+
+
+def _echo1(_):
     return _
 
 
@@ -56,25 +64,36 @@ def str2tup(keys):
 #         return tuple(map(getter, attrs))
 #     return fn
 
-class SelfAwareContainer:   # recipes.oo.SelfAware ???
+# class SelfAwareness(type):
+#     def __call__(cls, instance=None, *args, **kws):
+#         # this is here to handle initializing the object from an already
+#         # existing instance of the class
+#         if isinstance(instance, cls):
+#             return instance
+
+#         return super().__call__(instance, *args, **kws)
+
+
+# class SelfAware(metaclass=SelfAwareness):   # metaclass=SelfAwareness #  recipes.oo.SelfAware ???
     """
     A mixin class for containers that bypasses object initialization if the
     first argument to the initializer is an object of the same class,
     in which case that object is returned. Use at your own discretion.
     """
-    _skip_init = False
+    # _skip_init = False
 
-    def __new__(cls, *args, **kws):
-        # this is here to handle initializing the object from an already
-        # existing instance of the class
-        if len(args) and isinstance(args[0], cls):
-            instance = args[0]
-            instance._skip_init = True
-            return instance
-        else:
-            return super().__new__(cls)
+    # def __new__(cls, *args, **kws):
+    #     # this is here to handle initializing the object from an already
+    #     # existing instance of the class
+    #     obj = super().__new__(cls)
+    #     if len(args) and isinstance(args[0], cls):
+    #         instance = args[0]
+    #         instance._skip_init = True
+    #         return instance
+    #     else:
+    #         return super().__new__(cls)
 
-        # TODO: test + examples
+    #     # TODO: test + examples
 
 
 class OfTypes(ABCMeta):
@@ -139,12 +158,16 @@ class OfTypes(ABCMeta):
         # base_enforcers = []
         # indices = []
         # new_bases = list(bases)
+
         for i, base in enumerate(bases):
+            # print('BASS', base)
             if issubclass(base, abc.Container):
                 ic = i
 
-            if isinstance(base, cls):
+            # base is a TypeEnforcer class
+            if issubclass(base, _TypeEnforcer):
                 # _TypeEnforcer !
+                # print('_TypeEnforcer !', base,  base._allowed_types)
                 requested_allowed_types = base._allowed_types
                 ite = i
 
@@ -154,6 +177,7 @@ class OfTypes(ABCMeta):
                 if isinstance(bb, cls):
                     # this is a `_TypeEnforcer` base
                     currently_allowed_types.extend(bb._allowed_types)
+                    # print(currently_allowed_types)
                     # base_enforcers.append(bb)
                     # original_base = base
 
@@ -190,13 +214,13 @@ class OfTypes(ABCMeta):
                         # restriction to the new (subclass) type
                         # new_allowed_types.append(new)
                         break
-                    else:
-                        # requested restriction is a new type unrelated to
-                        # existing restriction
-                        raise TypeError(
-                            f'Multiple type restrictions ({new}, {allowed}) '
-                            'requested in different bases of container class '
-                            f'{name}.')  # To allow multiple
+
+                    # requested type restriction is a new type unrelated to
+                    # existing restriction. Disallow
+                    raise TypeError(
+                        f'Multiple type restrictions ({new}, {allowed}) '
+                        'requested in different bases of container class '
+                        f'{name}.')  # To allow multiple
             #     else:
             #         new_allowed_types.append(allowed)
             # #
@@ -246,7 +270,7 @@ class _TypeEnforcer:
         if raises is warns is silent is None:
             # default behaviour decided at init (default is to raise TypeError)
             raises = True
-        
+
         emit = self._actions[1 - first_true_index((raises, warns, silent))]
         for i, obj in enumerate(itr):
             self.check_type(obj, i, emit)
@@ -272,7 +296,8 @@ class _TypeEnforcer:
         super().extend(self.checks_type(itr))
 
 
-class ReprContainer:
+@dataclass(repr=False)
+class PrettyPrinter:
     """
     Flexible string representation for list-like containers.  This object can
     act as a replacement for the builtin `__repr__` or `__str__` methods.
@@ -280,69 +305,71 @@ class ReprContainer:
     your container built in.
     """
 
-    format = '{pre}: {joined}'
-    max_width = 120
-    edge_items = 2
-    wrap = True
-    max_items = 50
-    max_lines = 3
+    max_width: str = 120
+    edge_items: str = 2
+    wrap: bool = True
+    max_items: int = 20
+    max_lines: int = 3
+    sep: str = ', '
+    brackets: str = '[]'
+    show_size: bool = True
+    alias: Union[str, None] = None
+    item_str: Callable = str
+    # fmt: str = '{pre}: {joined}'
 
-    def __init__(self, parent, alias=None, sep=', ', brackets='[]',
-                 show_size=True):
-        self.parent = parent
-        self.name = alias or parent.__class__.__name__
-        self.sep = str(sep)
-        if brackets is None:
-            brackets = ('', '')
-        self.brackets = tuple(brackets)
+    def __post_init__(self):
+        # self.parent = parent
+        # self.name = alias or parent.__class__.__name__
+
+        if len(self.brackets) == 1:
+            self.brackets = self.brackets * 2
+        self.brackets = tuple(self.brackets)
         assert len(self.brackets) == 2
-        self.show_size = bool(show_size)
 
-    def __call__(self):
-        return self.format.format(
-            **self.__dict__,
-            **{name: p.fget(self) for name, p in
-               inspect.getmembers(self.__class__, is_property)})
+    def __call__(self, l):
+        return f'{self.pre(l)}: {self.joined(l)}'
+                    
+        # **self.__dict__,
+        # **{name: p.fget(self) for name, p in
+        #    inspect.getmembers(self.__class__, is_property)})
 
-    def __str__(self):
-        return self()
+    # def __str__(self):
+    #     return self()
 
-    def __repr__(self):
-        return self()
+    # def __repr__(self):
+    #     return self()
 
-    def item_str(self, item):
-        return str(item)
-
-    @property
-    def sized(self):
+    # @property
+    def sized(self, l):
         if self.show_size:
-            return '(size %i)' % len(self.parent)
+            return '(size %i)' % len(l)
         return ''
 
-    @property
-    def pre(self):
-        return self.name + self.sized
+    # @property
+    def pre(self, l):
+        name = self.alias or l.__class__.__name__
+        return name + self.sized(l)
 
-    @property
-    def joined(self):
+    # @property
+    def joined(self, l):
         n_per_line = 0
-        if len(self.parent):
-            first = self.item_str(self.parent[0])
+        if len(l) > 0:
+            first = self.item_str(l[0])
             n_per_line = self.max_width // (len(first) + len(self.sep))
 
-        if len(self.parent) > n_per_line:
+        if len(l) > n_per_line:
             line_count = 1  # start counting here so we break 1 line early
             if self.wrap:
                 s = ''
-                w_pre = len(self.pre) + 3
+                w_pre = len(self.pre(l)) + 3
                 newline = '\n' + ' ' * w_pre
                 loc = w_pre
                 end = self.max_items - self.edge_items
-                for i, item in enumerate(self.parent):
+                for i, item in enumerate(l):
                     si = self.item_str(item)
                     if i > end:
                         s += ' ... ' + self.sep
-                        s += self._joined(self.parent[-self.edge_items:])
+                        s += self._joined(l[-self.edge_items:])
                         break
 
                     if loc + len(si) > self.max_width:
@@ -351,7 +378,7 @@ class ReprContainer:
                         line_count += 1
                         if line_count >= self.max_lines:
                             s += ' ... ' + self.sep
-                            s += self._joined(self.parent[-self.edge_items:])
+                            s += self._joined(l[-self.edge_items:])
                             # todo: can probably print more edge items here
                             break
 
@@ -361,64 +388,98 @@ class ReprContainer:
                 s = s.strip(self.sep)
 
                 # if i > end:
-                #     s += self.parent[-self.edge_items:]
+                #     s += l[-self.edge_items:]
 
-                # for j0 in range(0, len(self.parent), n_per_line):
+                # for j0 in range(0, len(l), n_per_line):
                 #     j1 = j0 + n_per_line
                 #     if j1 > imx:
                 #         s += ' ... ' + newline
                 #         break
-                #     s += self._joined(self.parent[j0: j1]) + newline
+                #     s += self._joined(l[j0: j1]) + newline
                 #
                 # if j1 > imx:
-                #     s += self._joined(self.parent[j0:])
+                #     s += self._joined(l[j0:])
                 # else:
                 #     s = s.rstrip(newline)
 
-                # s += self._joined(self.parent[j0:])
+                # s += self._joined(l[j0:])
                 # else:
-                #     s += self._joined(self.parent[-n_per_line:])
+                #     s += self._joined(l[-n_per_line:])
 
                 # if i1 > imx:
 
                 # else:
-                #     s += self._joined(self.parent[i0:])
+                #     s += self._joined(l[i0:])
 
                 return s.join(self.brackets)
 
-            return ' ... '.join((self._joined(self.parent[:self.edge_items]),
-                                 self._joined(self.parent[-self.edge_items:]))
+            return ' ... '.join((self._joined(l[:self.edge_items]),
+                                 self._joined(l[-self.edge_items:]))
                                 ).join(self.brackets)
 
-        return self._joined(self.parent).join(self.brackets)
+        return self._joined(l).join(self.brackets)
 
     def _joined(self, items):
         return self.sep.join(map(str, (map(self.item_str, items))))
 
 
-class ReprContainerMixin:
-    """
-    If you inherit from this class, add
-    >>> self._repr = ReprContainer(self)
-    to your `__init__` method, and add  whatever option you want for the
-    representation. If your container is an attribute of another class, use
-    >>> self._repr = ReprContainer(self.data)
-    where 'self.data' is the container you want to represent
-    """
-    _repr = None
+class PPrintContainer:  
+    # """
+    # If you inherit from this class, add
+    # >>> self._repr = ReprContainer(self)
+    # to your `__init__` method, and add  whatever option you want for the
+    # representation. If your container is an attribute of another class, use
+    # >>> self._repr = ReprContainer(self.data)
+    # where 'self.data' is the container you want to represent
+    # """
+    
+    # default pprint
+    pretty = PrettyPrinter()
 
     def __repr__(self):
-        if self._repr is None:
-            self._repr = ReprContainer(self)  # this is just the default.
+        return self.pretty(self)
 
-        return self._repr()
+    def __str__(self):
+        return self.pretty(self)
+    
 
-    # def pprint(self):
 
-
-class ItemGetter:  # ItemGetterMixin ?
+class ItemArrayGetter:
     """
-    Container that supports vectorized item getting like numpy arrays
+    Mixin for vectorized item getting for index keys that are sequences of
+    items: lists, tuples, numpy arrays
+    """
+
+    def __getitem__(self, key):
+        getitem = super().__getitem__
+
+        if isinstance(key, (list, tuple)):
+            # if multiple item retrieval vectorizer!
+            return list(map(getitem, key))
+
+        if isinstance(key, np.ndarray):
+            if key.ndim != 1:
+                raise ValueError('Only 1D indexing arrays are allowed')
+
+            if key.dtype.kind == 'b':
+                if len(key) != len(self):
+                    raise ValueError(
+                        'Indexing with a boolean array of unequal size '
+                        f'(len(key) = {len(key)} ≠ {len(self)} = len(self)).')
+
+                key, = np.where(key)
+
+            if key.dtype.kind == 'i':
+                return list(map(getitem, key))
+
+            raise ValueError('Index arrays should be of type int or bool')
+
+        return getitem(key)
+
+
+class ItemGetter(ItemArrayGetter):
+    """
+    Mixin that supports vectorized item getting like numpy arrays
     """
     _returned_type = None
 
@@ -438,34 +499,21 @@ class ItemGetter:  # ItemGetterMixin ?
         return self._returned_type or self.__class__
 
     def __getitem__(self, key):
-        getitem = super().__getitem__
+        # get_single_item = super(ItemArrayGetter, self).__getitem__
+        # getitem = super().__getitem__
         #
-        if (isinstance(key, numbers.Integral)
+        if (isinstance(key, (numbers.Integral, slice, type(...)))
                 and not isinstance(key, (bool, np.bool))):
-            return getitem(key)
+            return super(ItemArrayGetter, self).__getitem__(key)
 
-        if isinstance(key, (slice, type(...))):
-            items = getitem(key)
-
-        elif isinstance(key, (list, tuple)):
+        if isinstance(key, (list, tuple, np.ndarray)):
             # if multiple item retrieval vectorizer!
-            items = [getitem(k) for k in key]
+            # wrap in required type
+            return self.get_returned_type()(
+                ItemArrayGetter.__getitem__(self, key)
+            )
 
-        elif isinstance(key, np.ndarray):
-            if key.ndim != 1:
-                raise ValueError('Only 1D indexing arrays are allowed')
-            if key.dtype.kind == 'b':
-                key, = np.where(key)
-            if key.dtype.kind == 'i':
-                items = [getitem(k) for k in key]
-            else:
-                raise ValueError(
-                    'Index arrays should be of type float or bool')
-        else:
-            raise TypeError('Invalid index type %r' % type(key))
-
-        # wrap in required type
-        return self.get_returned_type()(items)
+        raise TypeError('Invalid index type %r' % type(key))
 
 
 class ContainerWrapper(ItemGetter):
@@ -720,7 +768,7 @@ class AttrMapper:
         # kws.update(zip(keys, values)) # check if sequences else error prone
         get_value = itt.repeat
         if each:
-            get_value = _echo
+            get_value = _echo1
 
             # check values are same length as container before we attempt to set
             # any attributes
@@ -734,11 +782,7 @@ class AttrMapper:
 
         for key, value in kws.items():
             *chained, attr = key.rsplit('.', 1)
-            if chained:
-                get_parent = op.attrgetter(chained[0])
-            else:
-                get_parent = _echo
-
+            get_parent = op.attrgetter(chained[0]) if chained else _echo1
             for obj, val in zip(self, get_value(value)):
                 setattr(get_parent(obj), attr, val)
 
@@ -801,7 +845,7 @@ class AttrProp:
     ['H', 'E', 'L', 'L', 'O', '!']
     """
 
-    def __init__(self, name, convert=_echo):
+    def __init__(self, name, convert=_echo1):
         self.name = name
         self.convert = convert
 
@@ -1066,10 +1110,11 @@ def get_sort_values(self, *keys, **kws):
     return list(unpack(*vals))
 
 
-class Container(ArrayLike1D, SelfAwareContainer, AttrGrouper,
-                ReprContainerMixin, LoggingMixin):
+class Container(SelfAware, ArrayLike1D, AttrGrouper,
+                PPrintContainer, LoggingMixin,
+                metaclass=classmaker()):
     """Good container"""
 
-    def __init__(self, list_=()):
-        # init container
-        ArrayLike1D.__init__(self, list_)
+    # def __init__(self, list_=()):
+    #     # init container
+    #     super().__init__(list_)
