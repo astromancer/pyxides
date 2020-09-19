@@ -301,7 +301,7 @@ class PrettyPrinter:
     """
     Flexible string representation for list-like containers.  This object can
     act as a replacement for the builtin `__repr__` or `__str__` methods.
-    Inherit from `ReprContainerMixin` to get pretty representations of
+    Inherit from `PrettyPrinter` to get pretty representations of
     your container built in.
     """
 
@@ -309,26 +309,34 @@ class PrettyPrinter:
     edge_items: str = 2
     wrap: bool = True
     max_items: int = 20
-    max_lines: int = 3
+    max_lines: int = 10
+    per_line: Union[int, None] = None
     sep: str = ', '
     brackets: str = '[]'
     show_size: bool = True
     alias: Union[str, None] = None
     item_str: Callable = str
+    trunc: str = ' ... '
     # fmt: str = '{pre}: {joined}'
 
     def __post_init__(self):
         # self.parent = parent
         # self.name = alias or parent.__class__.__name__
 
-        if len(self.brackets) == 1:
-            self.brackets = self.brackets * 2
+        # Check brackets ok
+        if len(self.brackets) in (0, 1):
+            self.brackets = (self.brackets, ) * 2
         self.brackets = tuple(self.brackets)
         assert len(self.brackets) == 2
 
+        #
+        # if '\n' in self.sep:
+        #     self.per_line = 1
+        #     self.sep = self.sep.replace('\n', ' ')
+
     def __call__(self, l):
-        return f'{self.pre(l)}: {self.joined(l)}'
-                    
+        return f'{self.pre(l)}{self.joined(l)}'
+
         # **self.__dict__,
         # **{name: p.fget(self) for name, p in
         #    inspect.getmembers(self.__class__, is_property)})
@@ -348,82 +356,88 @@ class PrettyPrinter:
     # @property
     def pre(self, l):
         name = self.alias or l.__class__.__name__
-        return name + self.sized(l)
+        return name + self.sized(l) + ': '
 
     # @property
     def joined(self, l):
-        n_per_line = 0
-        if len(l) > 0:
+
+        # first check if more than one line needed for repr
+        sep = self.sep
+        ei = self.edge_items
+        mw = self.max_width
+        n_per_line = self.per_line
+        size = len(l)
+
+        # guess how many per line if not requested
+        if (size > 0) and (n_per_line is None):
+            # note this logic for fixed width items
             first = self.item_str(l[0])
-            n_per_line = self.max_width // (len(first) + len(self.sep))
+            n_per_line = mw // (len(first) + len(sep))
 
-        if len(l) > n_per_line:
-            line_count = 1  # start counting here so we break 1 line early
-            if self.wrap:
-                s = ''
-                w_pre = len(self.pre(l)) + 3
-                newline = '\n' + ' ' * w_pre
-                loc = w_pre
-                end = self.max_items - self.edge_items
-                for i, item in enumerate(l):
-                    si = self.item_str(item)
-                    if i > end:
-                        s += ' ... ' + self.sep
-                        s += self._joined(l[-self.edge_items:])
-                        break
+        # # repr fits into a single line
+        # if size <= n_per_line:
+        #     return self.trunc.join(
+        #         (self._joined(l[:ei]),
+        #          self._joined(l[-ei:]))
+        #     ).join(self.brackets)
 
-                    if loc + len(si) > self.max_width:
-                        s += newline
-                        loc = w_pre
-                        line_count += 1
-                        if line_count >= self.max_lines:
-                            s += ' ... ' + self.sep
-                            s += self._joined(l[-self.edge_items:])
-                            # todo: can probably print more edge items here
-                            break
+        if (size <= n_per_line) or not self.wrap:
+            return self._joined(l).join(self.brackets)
 
-                    s += si + self.sep
-                    loc += len(si + self.sep)
+        #
+        indent = len(self.pre(l))
+        # print(type(l), indent)
 
-                s = s.strip(self.sep)
+        # check if we need to truncate
+        if size > self.max_items:
+            ei = self.edge_items
+            l = list(itt.chain(map(self.item_str, l[:(self.max_items - ei)]),
+                               iter(['...']),
+                               map(self.item_str, l[-ei:])))
+            return self.wrapped(l, indent).join(self.brackets)
 
-                # if i > end:
-                #     s += l[-self.edge_items:]
+        # need wrapped repr
+        l = list(map(self.item_str, l))
+        return self.wrapped(l, indent).join(self.brackets)
 
-                # for j0 in range(0, len(l), n_per_line):
-                #     j1 = j0 + n_per_line
-                #     if j1 > imx:
-                #         s += ' ... ' + newline
-                #         break
-                #     s += self._joined(l[j0: j1]) + newline
-                #
-                # if j1 > imx:
-                #     s += self._joined(l[j0:])
-                # else:
-                #     s = s.rstrip(newline)
+    def wrapped(self, l, indent=0):
+        # get wrapped repr
 
-                # s += self._joined(l[j0:])
-                # else:
-                #     s += self._joined(l[-n_per_line:])
+        ei = self.edge_items
+        mw = self.max_width
+        sep = self.sep
 
-                # if i1 > imx:
+        s = ''
+        loc = indent
+        line_count = 1  # start counting here so we break 1 line early
+        end = self.max_items - ei
+        newline = '\n' + ' ' * indent
+        for i, item in enumerate(l):
+            items_per_line = self.per_line or round(i / line_count)
+            if line_count - items_per_line >= self.max_lines:
+                s += self.wrapped([self.trunc] + l[-ei:], indent)
+                break
 
-                # else:
-                #     s += self._joined(l[i0:])
+            # check if we should go to the next line
+            if (i and (self.per_line and (i % self.per_line == 0)
+                       or loc + len(item) > mw)):
+                # if len(si) > mw:
+                #     'problem'
 
-                return s.join(self.brackets)
+                s += newline
+                loc = indent
+                line_count += 1
 
-            return ' ... '.join((self._joined(l[:self.edge_items]),
-                                 self._joined(l[-self.edge_items:]))
-                                ).join(self.brackets)
+            s += item + sep
+            loc = len(s) % mw
 
-        return self._joined(l).join(self.brackets)
+        return s.strip(sep)
 
     def _joined(self, items):
         return self.sep.join(map(str, (map(self.item_str, items))))
 
 
-class PPrintContainer:  
+class PPrintContainer:
     # """
     # If you inherit from this class, add
     # >>> self._repr = ReprContainer(self)
@@ -432,7 +446,7 @@ class PPrintContainer:
     # >>> self._repr = ReprContainer(self.data)
     # where 'self.data' is the container you want to represent
     # """
-    
+
     # default pprint
     pretty = PrettyPrinter()
 
@@ -441,7 +455,6 @@ class PPrintContainer:
 
     def __str__(self):
         return self.pretty(self)
-    
 
 
 class ItemArrayGetter:
@@ -858,7 +871,7 @@ class AttrProp:
         return self.convert(obj.attrs(self.name))
 
 
-class Grouped(OrderedDict):
+class Grouped(DefaultOrderedDict):
     """
     Emulates dict to hold multiple container instances keyed by their
     common attribute values. The attribute names given in group_id are the
@@ -883,11 +896,13 @@ class Grouped(OrderedDict):
         and optimization
         """
 
-        if not callable(factory):
-            raise TypeError('Factory (first argument) must be a callable')
-        self.factory = factory
+        # if not callable(factory):
+        #     raise TypeError('Factory (first argument) must be a callable')
+        # self.factory = factory
 
-        super().__init__(*args, **kws)
+        super().__init__(factory, *args, **kws)
+
+        # self.update(*args, **kws)
 
     # def make_container(self):
     #    monkey patch containers with grouping context?
@@ -901,7 +916,7 @@ class Grouped(OrderedDict):
         `factory` function
         """
         # construct container
-        list_like = self.factory()
+        list_like = self.default_factory()
         # filter None since we use that to represent empty group
         for obj in filter(None, self.values()):
             if isinstance(obj, type(list_like)):
@@ -990,7 +1005,7 @@ class AttrGrouper(AttrMapper):
 
     def group_by(self, *keys, return_index=False, **kws):
         """
-        Separate a run according to the attribute given in keys.
+        Separate a container according to the attribute given in keys.
         keys can be a tuple of attributes (str), in which case it will
         separate into runs with a unique combination of these attributes.
 
@@ -1017,11 +1032,15 @@ class AttrGrouper(AttrMapper):
             attrs
 
         """
+        g = self.new_groups()
+        if len(keys) == 1 and isinstance(keys[0], g.__class__):
+            keys, kws = keys[0].group_id
+            # group_like() better?
+
         vals = get_sort_values(self, *keys, **kws)
 
         # use DefaultOrderedDict to preserve order among groups
         groups = DefaultOrderedDict(self.__class__)  # keys, **kws
-        groups.group_id = keys, kws
         indices = DefaultOrderedDict(list)
 
         # if self.group_id == keys:  # is already separated by this key
@@ -1040,8 +1059,9 @@ class AttrGrouper(AttrMapper):
                 groups[a].append(item)
                 indices[a].append(i)
 
-        g = self.new_groups()
+        #
         g.update(groups)
+        g.group_id = keys, kws
 
         if return_index:
             return g, indices
