@@ -11,7 +11,7 @@ import warnings
 from abc import ABCMeta
 from collections import abc, UserList
 import numbers
-from .dicts import DefaultOrderedDict
+from ..dicts import DefaultOrderedDict, pformat
 import itertools as itt
 import operator as op
 # import inspect
@@ -22,8 +22,7 @@ import numpy as np
 from recipes.logging import LoggingMixin
 from recipes.oo import SelfAware
 from recipes.oo.meta import classmaker
-from .sets import OrderedSet
-from .dicts import pformat
+from ..sets import OrderedSet
 
 
 SELECT_LOGIC = {'AND': np.logical_and,
@@ -485,7 +484,8 @@ class ItemArrayGetter:
             if key.dtype.kind == 'i':
                 return list(map(getitem, key))
 
-            raise ValueError('Index arrays should be of type int or bool')
+            raise ValueError('Index arrays should be of type int or bool not '
+                             f'{key.dtype!r}')
 
         return getitem(key)
 
@@ -517,7 +517,8 @@ class ItemGetter(ItemArrayGetter):
         #
         if (isinstance(key, (numbers.Integral, slice, type(...)))
                 and not isinstance(key, (bool, np.bool))):
-            return super(ItemArrayGetter, self).__getitem__(key)
+            return super().__getitem__(key)
+            # return super(ItemArrayGetter, self).__getitem__(key)
 
         if isinstance(key, (list, tuple, np.ndarray)):
             # if multiple item retrieval vectorizer!
