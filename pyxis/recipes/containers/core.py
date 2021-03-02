@@ -707,7 +707,7 @@ class AttrMapper:
     This example demonstrates basic usage
     >>> import time
     >>> class MyList(list, AttrMapper):
-    >>>        pass
+    >>>    pass
 
     >>> class Simple:
     >>>     def __init__(self, i):
