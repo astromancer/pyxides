@@ -828,8 +828,8 @@ class AttrProp:
     """
     Descriptor for vectorized attribute getting on `AttrMapper` subclasses.
 
-    Example
-    -------
+    Examples
+    --------
     The normal property definition for getting attributes on contained items
     >>> class Example:
     ...     @property
@@ -1040,8 +1040,10 @@ class AttrGrouper(AttrMapper):
 
         vals = get_sort_values(self, *keys, **kws)
 
-        # use DefaultOrderedDict to preserve order among groups
-        groups = DefaultOrderedDict(self.__class__)  # keys, **kws
+        # use DefaultOrderedDict to preserve order amongst groups
+        # default factory makes another object of this class ie. container with
+        # grouping ability
+        groups = DefaultOrderedDict(self.__class__)  
         indices = DefaultOrderedDict(list)
 
         # if self.group_id == keys:  # is already separated by this key
@@ -1063,7 +1065,10 @@ class AttrGrouper(AttrMapper):
         #
         g.update(groups)
         g.group_id = keys, kws
-
+        # turn off the default factory, since we are done adding items now
+        g.default_factory = None
+        indices.default_factory = None
+        
         if return_index:
             return g, indices
         return g
