@@ -658,8 +658,8 @@ class MethodCaller:
         return op.attrgetter(self._name)(obj)(*self._args, **self._kwargs)
 
     def __repr__(self):
-        args = [repr(self._name)]
-        args.extend(map(repr, self._args))
+        args = [repr(self._name),
+                *map(repr, self._args)]
         args.extend('%s=%r' % (k, v) for k, v in self._kwargs.items())
         return '%s.%s(%s)' % (self.__class__.__module__,
                               self.__class__.__name__,
