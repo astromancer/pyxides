@@ -1,6 +1,6 @@
 from collections import UserList
 
-from recipes.containers.core import OfTypes, _TypeEnforcer
+from recipes.core import OfTypes, _TypeEnforcer
 
 import pytest
 

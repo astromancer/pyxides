@@ -316,6 +316,8 @@ class PrettyPrinter:
     alias: Union[str, None] = None
     item_str: Callable = str
     trunc: str = ' ... '
+    hang: bool = False
+    indent: None = None
     # fmt: str = '{pre}: {joined}'
 
     def __post_init__(self):
@@ -334,7 +336,10 @@ class PrettyPrinter:
         #     self.sep = self.sep.replace('\n', ' ')
 
     def __call__(self, l):
-        return f'{self.pre(l)}{self.joined(l)}'
+        pre = self.pre(l)
+        if self.indent is None:
+            self.indent = len(pre)
+        return pre + self.joined(l)
 
         # **self.__dict__,
         # **{name: p.fget(self) for name, p in
@@ -349,13 +354,13 @@ class PrettyPrinter:
     # @property
     def sized(self, l):
         if self.show_size:
-            return '(size %i)' % len(l)
+            return f'(size {len(l)})'
         return ''
 
     # @property
     def pre(self, l):
         name = self.alias or l.__class__.__name__
-        return name + self.sized(l) + ': '
+        return f'{name}{self.sized(l)}: '
 
     # @property
     def joined(self, l):
@@ -383,43 +388,41 @@ class PrettyPrinter:
         if (size <= n_per_line) or not self.wrap:
             return self._joined(l).join(self.brackets)
 
-        #
-        indent = len(self.pre(l))
-        # print(type(l), indent)
-
         # check if we need to truncate
-        if size > self.max_items:
+        fmt = self.item_str
+        mx = self.max_items
+        if size > mx:
             ei = self.edge_items
-            l = list(itt.chain(map(self.item_str, l[:(self.max_items - ei)]),
-                               iter(['...']),
-                               map(self.item_str, l[-ei:])))
-            return self.wrapped(l, indent).join(self.brackets)
+            l = (*map(fmt, l[:(mx - ei)]), 
+                 '...',
+                 *map(fmt, l[-ei:]))
+            return self.wrapped(list(l), self.indent).join(self.brackets)
 
         # need wrapped repr
-        l = list(map(self.item_str, l))
-        return self.wrapped(l, indent).join(self.brackets)
+        l = list(map(fmt, l))
+        return self.wrapped(l, self.indent).join(self.brackets)
 
     def wrapped(self, l, indent=0):
         # get wrapped repr
 
         ei = self.edge_items
         mw = self.max_width
+        npl = self.per_line
         sep = self.sep
 
-        s = ''
         loc = indent
         line_count = 1  # start counting here so we break 1 line early
         end = self.max_items - ei
         newline = '\n' + ' ' * indent
+        s = newline * self.hang
         for i, item in enumerate(l):
-            items_per_line = self.per_line or round(i / line_count)
+            items_per_line = npl or round(i / line_count)
             if line_count - items_per_line >= self.max_lines:
                 s += self.wrapped([self.trunc] + l[-ei:], indent)
                 break
 
             # check if we should go to the next line
-            if (i and (self.per_line and (i % self.per_line == 0)
-                       or loc + len(item) > mw)):
+            if i and (npl and (i % npl == 0) or loc + len(item) > mw):
                 # if len(si) > mw:
                 #     'problem'
 
@@ -1043,7 +1046,7 @@ class AttrGrouper(AttrMapper):
         # use DefaultOrderedDict to preserve order amongst groups
         # default factory makes another object of this class ie. container with
         # grouping ability
-        groups = DefaultOrderedDict(self.__class__)  
+        groups = DefaultOrderedDict(self.__class__)
         indices = DefaultOrderedDict(list)
 
         # if self.group_id == keys:  # is already separated by this key
@@ -1068,7 +1071,7 @@ class AttrGrouper(AttrMapper):
         # turn off the default factory, since we are done adding items now
         g.default_factory = None
         indices.default_factory = None
-        
+
         if return_index:
             return g, indices
         return g
