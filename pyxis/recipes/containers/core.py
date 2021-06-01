@@ -38,7 +38,6 @@ def is_property(v):
     return isinstance(v, property)
 
 
-
 def str2tup(keys):
     if isinstance(keys, str):
         keys = keys,  # a tuple
@@ -906,6 +905,18 @@ class Grouped(DefaultOrderedDict):
     def __repr__(self):
         return pformat(self, self.__class__.__name__)
 
+    def at(self, index):
+        """
+        Get the value at index position. This enables list-like item getting for
+        integer keys which is useful if the keys for the grouping are too
+        complex to easily type.
+
+        Parameters
+        ----------
+        index : int
+        """
+        return next(itt.islice(iter(self.values()), index, index + 1))
+    
     def to_list(self):
         """
         Concatenate values to single list-like container. Returned container
