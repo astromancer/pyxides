@@ -2,27 +2,31 @@
 Container magic
 """
 
-from typing import Union, Callable
-from dataclasses import dataclass
-from recipes.iter import first_true_index
-from collections import OrderedDict
-from recipes.decor import raises as bork
-import warnings
-from abc import ABCMeta
-from collections import abc, UserList
-import numbers
-from ..dicts import DefaultOrderedDict, pformat
-import itertools as itt
-import operator as op
-# import inspect
-import functools as ftl
 
+# std libs
+import numbers
+import warnings
+import operator as op
+import functools as ftl
+import itertools as itt
+from abc import ABCMeta
+from dataclasses import dataclass
+from typing import Union, Callable
+from collections import abc, UserList
+
+# third-party libs
 import numpy as np
 
-from recipes.logging import LoggingMixin
+# local libs
 from recipes.oo import SelfAware
 from recipes.oo.meta import classmaker
-from ..sets import OrderedSet
+from recipes.decor import raises as bork
+from recipes.logging import LoggingMixin
+from recipes.iter import first_true_index
+
+# relative libs
+from ..functionals import echo0
+from ..dicts import DefaultOrderedDict, pformat
 
 
 SELECT_LOGIC = {'AND': np.logical_and,
@@ -32,14 +36,6 @@ SELECT_LOGIC = {'AND': np.logical_and,
 
 def is_property(v):
     return isinstance(v, property)
-
-
-def _echo(*_):
-    return _
-
-
-def _echo1(_):
-    return _
 
 
 def str2tup(keys):
@@ -99,7 +95,10 @@ class OfTypes(ABCMeta):
     """
     Factory that creates TypeEnforcer classes. Allows for the following usage
     pattern:
-    >>> class Container(UserList, OfTypes(int)): pass
+
+    >>> class Container(UserList, OfTypes(int)):
+    ...     pass
+
     which creates a container class `Container` that will only allow integer
     items inside. This constructor assigns a tuple of allowed types as class
     attribute `_allowed_types`
@@ -108,13 +107,14 @@ class OfTypes(ABCMeta):
     # NOTE: inherit from ABCMeta to avoid metaclass conflict with UserList which
     # has metaclass abc.ABCMeta
 
-    def __new__(cls, *args):
+    def __new__(cls, *args, **kws):
 
         if isinstance(args[0], str):
             # This results from an internal call during class construction
             name, bases, attrs = args
             # create class
-            return super().__new__(cls, name, cls.make_bases(name, bases), attrs)
+            return super().__new__(cls, name, cls.make_bases(name, bases),
+                                   attrs, **kws)
 
         # we are here if invoked by direct call:
         # >>> cls = OfTypes(int)
@@ -133,7 +133,7 @@ class OfTypes(ABCMeta):
                                 'should be classes')
 
         return super().__new__(cls, 'TypeEnforcer', (_TypeEnforcer,),
-                               {'_allowed_types': tuple(args)})
+                               {'_allowed_types': tuple(args)}, **kws)
 
     @classmethod
     def make_bases(cls, name, bases):
@@ -220,17 +220,7 @@ class OfTypes(ABCMeta):
                         f'Multiple type restrictions ({new}, {allowed}) '
                         'requested in different bases of container class '
                         f'{name}.')  # To allow multiple
-            #     else:
-            #         new_allowed_types.append(allowed)
-            # #
-            # print('new', new_allowed_types)
-            # print('new_bases', new_bases)
-
-        #     bases = tuple(new_bases)
-        # else:
-        #     # set new allowed types
-        #     bases[ite]._allowed_types = requested_allowed_types
-
+    
         if (ite is None) or (ic is None):
             return bases
 
@@ -254,13 +244,13 @@ class _TypeEnforcer:
     Item type checking mixin for list-like containers
     """
 
-    _allowed_types = (object, )    # placeholder
-    _actions = {-1: _echo,          # silently ignore
+    _allowed_types = (object, )     # placeholder
+    _actions = {-1: echo0,          # silently ignore
                 0: warnings.warn,
                 1: bork(TypeError)}
-    emit = _actions[1]         # default
+    emit = _actions[1]              # default
 
-    def __init__(self, items, *, severity=1):
+    def __init__(self, items=(), *, severity=1):
         super().__init__(self.checks_type(items))
         self.emit = self._actions[int(severity)]
 
@@ -316,6 +306,8 @@ class PrettyPrinter:
     alias: Union[str, None] = None
     item_str: Callable = str
     trunc: str = ' ... '
+    hang: bool = False
+    indent: None = None
     # fmt: str = '{pre}: {joined}'
 
     def __post_init__(self):
@@ -334,7 +326,10 @@ class PrettyPrinter:
         #     self.sep = self.sep.replace('\n', ' ')
 
     def __call__(self, l):
-        return f'{self.pre(l)}{self.joined(l)}'
+        pre = self.pre(l)
+        if self.indent is None:
+            self.indent = len(pre)
+        return pre + self.joined(l)
 
         # **self.__dict__,
         # **{name: p.fget(self) for name, p in
@@ -349,13 +344,13 @@ class PrettyPrinter:
     # @property
     def sized(self, l):
         if self.show_size:
-            return '(size %i)' % len(l)
+            return f'(size {len(l)})'
         return ''
 
     # @property
     def pre(self, l):
         name = self.alias or l.__class__.__name__
-        return name + self.sized(l) + ': '
+        return f'{name}{self.sized(l)}: '
 
     # @property
     def joined(self, l):
@@ -383,43 +378,41 @@ class PrettyPrinter:
         if (size <= n_per_line) or not self.wrap:
             return self._joined(l).join(self.brackets)
 
-        #
-        indent = len(self.pre(l))
-        # print(type(l), indent)
-
         # check if we need to truncate
-        if size > self.max_items:
+        fmt = self.item_str
+        mx = self.max_items
+        if size > mx:
             ei = self.edge_items
-            l = list(itt.chain(map(self.item_str, l[:(self.max_items - ei)]),
-                               iter(['...']),
-                               map(self.item_str, l[-ei:])))
-            return self.wrapped(l, indent).join(self.brackets)
+            l = (*map(fmt, l[:(mx - ei)]), 
+                 '...',
+                 *map(fmt, l[-ei:]))
+            return self.wrapped(list(l), self.indent).join(self.brackets)
 
         # need wrapped repr
-        l = list(map(self.item_str, l))
-        return self.wrapped(l, indent).join(self.brackets)
+        l = list(map(fmt, l))
+        return self.wrapped(l, self.indent).join(self.brackets)
 
     def wrapped(self, l, indent=0):
         # get wrapped repr
 
         ei = self.edge_items
         mw = self.max_width
+        npl = self.per_line
         sep = self.sep
 
-        s = ''
         loc = indent
         line_count = 1  # start counting here so we break 1 line early
         end = self.max_items - ei
         newline = '\n' + ' ' * indent
+        s = newline * self.hang
         for i, item in enumerate(l):
-            items_per_line = self.per_line or round(i / line_count)
+            items_per_line = npl or round(i / line_count)
             if line_count - items_per_line >= self.max_lines:
                 s += self.wrapped([self.trunc] + l[-ei:], indent)
                 break
 
             # check if we should go to the next line
-            if (i and (self.per_line and (i % self.per_line == 0)
-                       or loc + len(item) > mw)):
+            if i and (npl and (i % npl == 0) or loc + len(item) > mw):
                 # if len(si) > mw:
                 #     'problem'
 
@@ -658,8 +651,8 @@ class MethodCaller:
         return op.attrgetter(self._name)(obj)(*self._args, **self._kwargs)
 
     def __repr__(self):
-        args = [repr(self._name)]
-        args.extend(map(repr, self._args))
+        args = [repr(self._name),
+                *map(repr, self._args)]
         args.extend('%s=%r' % (k, v) for k, v in self._kwargs.items())
         return '%s.%s(%s)' % (self.__class__.__module__,
                               self.__class__.__name__,
@@ -782,21 +775,22 @@ class AttrMapper:
         # kws.update(zip(keys, values)) # check if sequences else error prone
         get_value = itt.repeat
         if each:
-            get_value = _echo1
+            get_value = echo0
 
             # check values are same length as container before we attempt to set
             # any attributes
             # unpack the keyword values in case they are iterables:
             kws = dict(zip(kws.keys(), map(list, kws.values())))
-            slen = set(map(len, kws.values()))
-            if (slen - {len(self)}):
+            lengths = set(map(len, kws.values()))
+            if (lengths - {len(self)}):
                 raise ValueError(
-                    f'Not all values are the same length ({slen}) as the '
-                    f'container {len(self)} while `each` has been set.')
+                    f'Not all values are the same length ({lengths}) as the '
+                    f'container {len(self)} while `each` has been set.'
+                    )
 
         for key, value in kws.items():
             *chained, attr = key.rsplit('.', 1)
-            get_parent = op.attrgetter(chained[0]) if chained else _echo1
+            get_parent = op.attrgetter(chained[0]) if chained else echo0
             for obj, val in zip(self, get_value(value)):
                 setattr(get_parent(obj), attr, val)
 
@@ -853,13 +847,13 @@ class AttrProp:
     ...
     ...         # properties: vectorized attribute getters on `images`
     ...         bees = AttrProp('b')
-    ...  
+    ...
     ... cs = ContainerOfSimples(map(Simple, 'hello!'))
     ... cs.bees
     ['H', 'E', 'L', 'L', 'O', '!']
     """
 
-    def __init__(self, name, convert=_echo1):
+    def __init__(self, name, convert=echo0):
         self.name = name
         self.convert = convert
 
@@ -911,10 +905,22 @@ class Grouped(DefaultOrderedDict):
     def __repr__(self):
         return pformat(self, self.__class__.__name__)
 
+    def at(self, index):
+        """
+        Get the value at index position. This enables list-like item getting for
+        integer keys which is useful if the keys for the grouping are too
+        complex to easily type.
+
+        Parameters
+        ----------
+        index : int
+        """
+        return next(itt.islice(iter(self.values()), index, index + 1))
+    
     def to_list(self):
         """
-        Concatenate values to container.  Container type is determined by
-        `factory` function
+        Concatenate values to single list-like container. Returned container
+        type is determined by `default_factory` function.
         """
         # construct container
         list_like = self.default_factory()
@@ -993,8 +999,8 @@ class AttrGrouper(AttrMapper):
     """
     Abstraction layer that can group, split and sort multiple data sets
     """
-
-    def new_groups(self, *args, **kws):
+    @classmethod
+    def new_groups(cls, *args, **kws):
         """
         Construct a new group mapping for items in the container.
         Subclasses can overwrite, but whatever is returned by this method
@@ -1002,7 +1008,7 @@ class AttrGrouper(AttrMapper):
         containers of the same type and have direct accees to regrouping
         method `group_by`.
         """
-        return Grouped(self.__class__)  # , *keys, **kws
+        return Grouped(cls, *args, **kws)
 
     def group_by(self, *keys, return_index=False, **kws):
         """
@@ -1043,7 +1049,7 @@ class AttrGrouper(AttrMapper):
         # use DefaultOrderedDict to preserve order amongst groups
         # default factory makes another object of this class ie. container with
         # grouping ability
-        groups = DefaultOrderedDict(self.__class__)  
+        groups = DefaultOrderedDict(self.__class__)
         indices = DefaultOrderedDict(list)
 
         # if self.group_id == keys:  # is already separated by this key
@@ -1066,9 +1072,9 @@ class AttrGrouper(AttrMapper):
         g.update(groups)
         g.group_id = keys, kws
         # turn off the default factory, since we are done adding items now
-        g.default_factory = None
-        indices.default_factory = None
-        
+        # g.default_factory = None # NOTE: need default_factory for to_list!
+        # indices.default_factory = None
+
         if return_index:
             return g, indices
         return g
@@ -1093,14 +1099,15 @@ class AttrGrouper(AttrMapper):
         return self[list(idx)]
 
     def select_by(self, logic='AND', **kws):
-
+        if not kws:
+            raise ValueError('No criteria for selection provided.')
+            
         logic = SELECT_LOGIC[logic.upper()]
-
-        selection = np.ones(len(self))
+        selection = np.ones(len(self), bool)
         for att, seek in kws.items():
             vals = self.attrs(att)
             if not callable(seek):
-                seek = seek.__eq__
+                seek = ftl.partial(op.eq, seek)
 
             selection = logic(selection, list(map(seek, vals)))
         #
@@ -1119,8 +1126,10 @@ def get_sort_values(self, *keys, **kws):
         elif isinstance(key_or_func, abc.Callable):
             vals.append(map(key_or_func, self))
         else:
-            raise ValueError('Key values must be str (attribute name on '
-                             'item) or callable (evaluated on item).')
+            raise ValueError(
+                'Key values must either be str (attribute(s) of item) '
+                'or callable (evaluated per item).'
+                )
 
     if kws:
         for fun, val in zip(kws.values(), zip(*self.attrs(*kws.keys()))):
