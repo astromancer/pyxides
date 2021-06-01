@@ -1,12 +1,15 @@
+
+# std libs
+import numbers
 from collections import UserList
 
-from recipes.core import OfTypes, _TypeEnforcer
-
+# third-party libs
 import pytest
-
 import numpy as np
 
-import numbers
+#
+from pyxis import OfTypes, _TypeEnforcer
+
 
 # pylint: disable=C0111     # Missing %s docstring
 # pylint: disable=R0201     # Method could be a function
