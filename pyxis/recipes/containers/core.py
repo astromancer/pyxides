@@ -23,6 +23,7 @@ from recipes.logging import LoggingMixin
 from recipes.oo import SelfAware
 from recipes.oo.meta import classmaker
 from ..sets import OrderedSet
+from ..functionals import echo0, echo
 
 
 SELECT_LOGIC = {'AND': np.logical_and,
@@ -33,13 +34,6 @@ SELECT_LOGIC = {'AND': np.logical_and,
 def is_property(v):
     return isinstance(v, property)
 
-
-def _echo(*_):
-    return _
-
-
-def _echo1(_):
-    return _
 
 
 def str2tup(keys):
@@ -99,7 +93,10 @@ class OfTypes(ABCMeta):
     """
     Factory that creates TypeEnforcer classes. Allows for the following usage
     pattern:
-    >>> class Container(UserList, OfTypes(int)): pass
+
+    >>> class Container(UserList, OfTypes(int)):
+    ...     pass
+
     which creates a container class `Container` that will only allow integer
     items inside. This constructor assigns a tuple of allowed types as class
     attribute `_allowed_types`
@@ -108,13 +105,14 @@ class OfTypes(ABCMeta):
     # NOTE: inherit from ABCMeta to avoid metaclass conflict with UserList which
     # has metaclass abc.ABCMeta
 
-    def __new__(cls, *args):
+    def __new__(cls, *args, **kws):
 
         if isinstance(args[0], str):
             # This results from an internal call during class construction
             name, bases, attrs = args
             # create class
-            return super().__new__(cls, name, cls.make_bases(name, bases), attrs)
+            return super().__new__(cls, name, cls.make_bases(name, bases),
+                                   attrs, **kws)
 
         # we are here if invoked by direct call:
         # >>> cls = OfTypes(int)
@@ -133,7 +131,7 @@ class OfTypes(ABCMeta):
                                 'should be classes')
 
         return super().__new__(cls, 'TypeEnforcer', (_TypeEnforcer,),
-                               {'_allowed_types': tuple(args)})
+                               {'_allowed_types': tuple(args)}, **kws)
 
     @classmethod
     def make_bases(cls, name, bases):
@@ -220,17 +218,7 @@ class OfTypes(ABCMeta):
                         f'Multiple type restrictions ({new}, {allowed}) '
                         'requested in different bases of container class '
                         f'{name}.')  # To allow multiple
-            #     else:
-            #         new_allowed_types.append(allowed)
-            # #
-            # print('new', new_allowed_types)
-            # print('new_bases', new_bases)
-
-        #     bases = tuple(new_bases)
-        # else:
-        #     # set new allowed types
-        #     bases[ite]._allowed_types = requested_allowed_types
-
+    
         if (ite is None) or (ic is None):
             return bases
 
@@ -254,13 +242,13 @@ class _TypeEnforcer:
     Item type checking mixin for list-like containers
     """
 
-    _allowed_types = (object, )    # placeholder
-    _actions = {-1: _echo,          # silently ignore
+    _allowed_types = (object, )     # placeholder
+    _actions = {-1: echo0,          # silently ignore
                 0: warnings.warn,
                 1: bork(TypeError)}
-    emit = _actions[1]         # default
+    emit = _actions[1]              # default
 
-    def __init__(self, items, *, severity=1):
+    def __init__(self, items=(), *, severity=1):
         super().__init__(self.checks_type(items))
         self.emit = self._actions[int(severity)]
 
@@ -785,21 +773,22 @@ class AttrMapper:
         # kws.update(zip(keys, values)) # check if sequences else error prone
         get_value = itt.repeat
         if each:
-            get_value = _echo1
+            get_value = echo0
 
             # check values are same length as container before we attempt to set
             # any attributes
             # unpack the keyword values in case they are iterables:
             kws = dict(zip(kws.keys(), map(list, kws.values())))
-            slen = set(map(len, kws.values()))
-            if (slen - {len(self)}):
+            lengths = set(map(len, kws.values()))
+            if (lengths - {len(self)}):
                 raise ValueError(
-                    f'Not all values are the same length ({slen}) as the '
-                    f'container {len(self)} while `each` has been set.')
+                    f'Not all values are the same length ({lengths}) as the '
+                    f'container {len(self)} while `each` has been set.'
+                    )
 
         for key, value in kws.items():
             *chained, attr = key.rsplit('.', 1)
-            get_parent = op.attrgetter(chained[0]) if chained else _echo1
+            get_parent = op.attrgetter(chained[0]) if chained else echo0
             for obj, val in zip(self, get_value(value)):
                 setattr(get_parent(obj), attr, val)
 
@@ -916,8 +905,8 @@ class Grouped(DefaultOrderedDict):
 
     def to_list(self):
         """
-        Concatenate values to container.  Container type is determined by
-        `factory` function
+        Concatenate values to single list-like container. Returned container
+        type is determined by `default_factory` function.
         """
         # construct container
         list_like = self.default_factory()
@@ -996,8 +985,8 @@ class AttrGrouper(AttrMapper):
     """
     Abstraction layer that can group, split and sort multiple data sets
     """
-
-    def new_groups(self, *args, **kws):
+    @classmethod
+    def new_groups(cls, *args, **kws):
         """
         Construct a new group mapping for items in the container.
         Subclasses can overwrite, but whatever is returned by this method
@@ -1005,7 +994,7 @@ class AttrGrouper(AttrMapper):
         containers of the same type and have direct accees to regrouping
         method `group_by`.
         """
-        return Grouped(self.__class__)  # , *keys, **kws
+        return Grouped(cls, *args, **kws)
 
     def group_by(self, *keys, return_index=False, **kws):
         """
@@ -1069,8 +1058,8 @@ class AttrGrouper(AttrMapper):
         g.update(groups)
         g.group_id = keys, kws
         # turn off the default factory, since we are done adding items now
-        g.default_factory = None
-        indices.default_factory = None
+        # g.default_factory = None # NOTE: need default_factory for to_list!
+        # indices.default_factory = None
 
         if return_index:
             return g, indices
@@ -1096,14 +1085,15 @@ class AttrGrouper(AttrMapper):
         return self[list(idx)]
 
     def select_by(self, logic='AND', **kws):
-
+        if not kws:
+            raise ValueError('No criteria for selection provided.')
+            
         logic = SELECT_LOGIC[logic.upper()]
-
-        selection = np.ones(len(self))
+        selection = np.ones(len(self), bool)
         for att, seek in kws.items():
             vals = self.attrs(att)
             if not callable(seek):
-                seek = seek.__eq__
+                seek = ftl.partial(op.eq, seek)
 
             selection = logic(selection, list(map(seek, vals)))
         #
@@ -1122,8 +1112,10 @@ def get_sort_values(self, *keys, **kws):
         elif isinstance(key_or_func, abc.Callable):
             vals.append(map(key_or_func, self))
         else:
-            raise ValueError('Key values must be str (attribute name on '
-                             'item) or callable (evaluated on item).')
+            raise ValueError(
+                'Key values must either be str (attribute(s) of item) '
+                'or callable (evaluated per item).'
+                )
 
     if kws:
         for fun, val in zip(kws.values(), zip(*self.attrs(*kws.keys()))):
