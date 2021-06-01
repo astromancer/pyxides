@@ -2,28 +2,31 @@
 Container magic
 """
 
-from typing import Union, Callable
-from dataclasses import dataclass
-from recipes.iter import first_true_index
-from collections import OrderedDict
-from recipes.decor import raises as bork
-import warnings
-from abc import ABCMeta
-from collections import abc, UserList
-import numbers
-from ..dicts import DefaultOrderedDict, pformat
-import itertools as itt
-import operator as op
-# import inspect
-import functools as ftl
 
+# std libs
+import numbers
+import warnings
+import operator as op
+import functools as ftl
+import itertools as itt
+from abc import ABCMeta
+from dataclasses import dataclass
+from typing import Union, Callable
+from collections import abc, UserList
+
+# third-party libs
 import numpy as np
 
-from recipes.logging import LoggingMixin
+# local libs
 from recipes.oo import SelfAware
 from recipes.oo.meta import classmaker
-from ..sets import OrderedSet
-from ..functionals import echo0, echo
+from recipes.decor import raises as bork
+from recipes.logging import LoggingMixin
+from recipes.iter import first_true_index
+
+# relative libs
+from ..functionals import echo0
+from ..dicts import DefaultOrderedDict, pformat
 
 
 SELECT_LOGIC = {'AND': np.logical_and,
@@ -845,13 +848,13 @@ class AttrProp:
     ...
     ...         # properties: vectorized attribute getters on `images`
     ...         bees = AttrProp('b')
-    ...  
+    ...
     ... cs = ContainerOfSimples(map(Simple, 'hello!'))
     ... cs.bees
     ['H', 'E', 'L', 'L', 'O', '!']
     """
 
-    def __init__(self, name, convert=_echo1):
+    def __init__(self, name, convert=echo0):
         self.name = name
         self.convert = convert
 
