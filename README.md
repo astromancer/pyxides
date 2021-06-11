@@ -10,7 +10,7 @@ TODO
 [![GitHub](https://img.shields.io/github/license/astromancer/pyxis.svg?color=blue)](https://pyxis.readthedocs.io/en/latest/license.html)
  -->
 
-This project is for ...
+This is a library for working with list-like containers.
 
 The name pyxis (ˈpik-səs): https://en.m.wikipedia.org/wiki/Pyxis_(vessel)
 
@@ -68,11 +68,11 @@ pytest pyxis
 # Contribute
 Contributions are welcome!
 
-1. [Fork it!](https://github.com/astromancer/pyxis/fork>)
+1. [Fork it!]({url}/fork)
 2. Create your feature branch\
     ``git checkout -b feature/rad``
 3. Commit your changes\
-    ``git commit -am 'Add something rad'``
+    ``git commit -am 'Add some cool feature 😎'``
 4. Push to the branch\
     ``git push origin feature/rad``
 5. Create a new Pull Request
