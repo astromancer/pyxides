@@ -1,3 +1,6 @@
+"""
+Classes for grouping containers
+"""
 
 # std libs
 import operator as op
@@ -33,28 +36,20 @@ class Groups(DefaultOrderedDict):
     # This class should never be instantiated directly, only by the new_group
     # method of AttrGrouper, which sets `group_id`
 
-    def __init__(self, factory, *args, **kws):
+    def __init__(self, factory=None, mapping=(), **kws):
         """
         note: the init arguments here do not do what you they normally do for
         the construction of a dict-like object. Objects of this type are
         always instantiated empty. This class should never be
         instantiated directly with keywords from the user, only by the
-        new_group  method of AttrGrouper.
+        `new_groups`  method of AttrGrouper.
+
         `keys` and `kws` are the "context" by which the grouping is done.
         Keep track of this so we have this info available later for pprint
-        and optimization
+        and optimization.
         """
 
-        # if not callable(factory):
-        #     raise TypeError('Factory (first argument) must be a callable')
-        # self.factory = factory
-
-        super().__init__(factory, *args, **kws)
-
-        # self.update(*args, **kws)
-
-    # def make_container(self):
-    #    monkey patch containers with grouping context?
+        super().__init__(factory, mapping, **kws)
 
     def __repr__(self):
         return pformat(self, self.__class__.__name__)
@@ -148,6 +143,48 @@ class Groups(DefaultOrderedDict):
     #     #
     #     return self.__class__(self.factory,
     #                           *(next(it) for _, it in itt.groupby(self, id)))
+
+    def map(self, func, *args, **kws):
+        # runs an arbitrary function on each shocCampaign in the group
+        assert callable(func)
+        out = self.__class__(self.default_factory)
+        out.group_id = self.group_id
+
+        for key, obj in self.items():
+            out[key] = None if obj is None else func(obj, *args, **kws)
+        return out
+
+    def calls(self, name, *args, **kws):
+        """
+        For each group of observations (shocCampaign), call the
+        method with name `name`  passing  `args` and `kws`.
+
+        Parameters
+        ----------
+        name
+        args
+        kws
+
+        Returns
+        -------
+
+        """
+
+        def run_method(obj, *args, **kws):
+            return getattr(obj, name)(*args, **kws)
+
+        return self.map(run_method, *args, **kws)
+
+    def attrs(self, *keys):
+        out = {}
+        for key, obj in self.items():
+            if obj is None:
+                out[key] = None
+            elif isinstance(obj, AttrMapper):
+                out[key] = obj.attrs(*keys)
+            else:
+                out[key] = op.attrgetter(*keys)(obj)
+        return out
 
 
 class AttrGrouper(AttrMapper):
