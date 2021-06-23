@@ -1,6 +1,6 @@
 # Pyxis
 
-> Containers for the python sages
+> Containers for the python sages 🏺✨📦
 
 <!-- 
 TODO
@@ -10,47 +10,74 @@ TODO
 [![GitHub](https://img.shields.io/github/license/astromancer/pyxis.svg?color=blue)](https://pyxis.readthedocs.io/en/latest/license.html)
  -->
 
-This is a library for working with list-like containers.
+This is a python library for working with array-like containers.
 
-The name pyxis (ˈpik-səs): https://en.m.wikipedia.org/wiki/Pyxis_(vessel)
+The name "pyxis" (ˈpik-səs) comes from the Greek word for the decorated cylindrical
+[containers from antiquity](https://en.m.wikipedia.org/wiki/Pyxis_(vessel)). The 
+name felt appropriate for a `python` library involving containers!
 
 # Install
 
-  ```shell
-  pip install pyxis
-  ```
+```shell
+pip install pyxis
+```
 
 # Use
 
 
-### Basic
+### Basic usage
+The `containers` module contains some ready-made container classes that can be 
+used directly:
+
 ```python
-from pyxis.
+from pyxis.containers import ArrayLike1D
 
 
-```  
+a = ArrayLike1D([1, 2, 3])
+# it has the usual list-like methods for editing, and expanding
+three = a.pop(-1)
+a.append(id)
+a.extend(['some', 'other', object])
+# multi-indexing works
+a[[0, 3, 5]]
+```
+    [1, <function id(obj, /)>, 'other']
 
 ### Type Enforcement
+To construct a container that only allows certain types of objects:
 ```python
-from pyxis.
+from pyxis.type_check import OfType
 
+class Twinkie:
+    """Yum!"""
 
+class Box(list, OfType(Twinkie)):
+    """So much YUM!"""
+
+twinkies = Box()
+twinkies.append(Twinkie()) # OK!
 ```  
+Object other than `Twinkie`s, are not allowed in the container:
+```python
+twinkies.append(0)
+```
+    TypeError: Items in container class 'Box' must derive from  <class '__main__.Twinkie'>. Item 1  is of type <class 'int'>.
 
 ### Vectorization
-```python
+TODO
+<!-- ```python
 from pyxis.
 
 
-```
+``` -->
 
 ### Grouping containers
-
-```python
+TODO
+<!-- ```python
 from pyxis.
 
 
-```  
+```   -->
 
 <!-- For more examples see [Documentation]() -->
 
@@ -68,7 +95,7 @@ pytest pyxis
 # Contribute
 Contributions are welcome!
 
-1. [Fork it!]({url}/fork)
+1. [Fork it!](https://github.com/astromancer/pyxis/fork)
 2. Create your feature branch\
     ``git checkout -b feature/rad``
 3. Commit your changes\
