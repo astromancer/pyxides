@@ -2,12 +2,11 @@
 Enable construction of containers with uniform item type(s)
 """
 
-
 # std libs
-import warnings
-import operator as op
+import warnings as wrn
 from abc import ABCMeta
 from collections import abc
+
 
 # local libs
 from recipes.iter import first_true_index
@@ -162,20 +161,35 @@ class OfTypes(ABCMeta):
 OfType = OfTypes
 
 
-class _TypeEnforcer:
+class _TypeEnforcer: 
     """
     Item type checking mixin for list-like containers
     """
+    
+    # TODO: inherit from UserList, so we can init like 
+    # from pyxis.type_check import OfType
+
+    # class Twinkie:
+    #     """Yum!"""
+
+    # class Box(OfType(Twinkie)):
+    #     """So much YUM!"""
+    
+    # Box()
 
     _allowed_types = (object, )     # placeholder
     _actions = {-1: echo0,          # silently ignore
-                0: warnings.warn,
+                0: wrn.warn,
                 1: bork(TypeError)}
-    emit = _actions[1]              # default
+    emit = staticmethod(_actions[1])              # default
 
-    def __init__(self, items=(), *, severity=1):
+    @classmethod
+    def type_checking(cls, severity=1):
+        cls.emit = staticmethod(cls._actions[int(severity)])
+
+    def __init__(self, items=()):
         super().__init__(self.checks_type(items))
-        self.emit = self._actions[int(severity)]
+        # self.emit = self._actions[int(severity)]
 
     def checks_type(self, itr, raises=None, warns=None, silent=None):
         """Generator that checks types"""
@@ -185,20 +199,25 @@ class _TypeEnforcer:
 
         emit = self._actions[1 - first_true_index((raises, warns, silent))]
         for i, obj in enumerate(itr):
-            self.check_type(obj, i, emit)
-            yield obj
+            with wrn.catch_warnings():
+                wrn.filterwarnings('once', 'Items in container class')
+                self.check_type(obj, i, emit)
+                yield obj
 
     def check_type(self, obj, i='', emit=None):
         """Type checker"""
-        if not isinstance(obj, self._allowed_types):
-            emit = emit or self.emit
-            many = len(self._allowed_types) > 1
-            map_func = op.attrgetter('__name__')  # autoreload HACK
-            class_names = map(map_func, self._allowed_types)
-            ok = (next, tuple)[many](class_names)
-            emit(f'Items in container class {self.__class__.__name__!r} must '
-                 f'derive from {"one of" if many else ""} {ok}. '
-                 f'Item {i}{" " * bool(i)} is of type {type(obj)!r}.')
+        if isinstance(obj, self._allowed_types):
+            return
+
+        emit = emit or self.emit
+        if emit is echo0:
+            return
+
+        many = len(self._allowed_types) > 1
+        ok = self._allowed_types[... if many else 0]
+        emit(f'Items in container class {self.__class__.__name__!r} must '
+             f'derive from {"one of" if many else ""} {ok}. '
+             f'Item {i}{" " * bool(i)} is of type {type(obj)!r}.')
 
     def append(self, item):
         self.check_type(item, len(self))

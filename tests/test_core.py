@@ -8,14 +8,16 @@ import pytest
 import numpy as np
 
 #
-from pyxis import OfTypes, _TypeEnforcer
+from pyxis.type_check import OfTypes, _TypeEnforcer
 
 
 # pylint: disable=C0111     # Missing %s docstring
 # pylint: disable=R0201     # Method could be a function
 # pylint: disable=R0901     # Too many ancestors (%s/%s)
-# example container classes
 
+
+# ---------------------------------------------------------------------------- #
+# example container classes
 
 class Coi(UserList, OfTypes(int)):
     pass
@@ -28,8 +30,12 @@ class CoI(UserList, OfTypes(numbers.Integral)):
 class CoR(UserList, OfTypes(numbers.Real)):
     pass
 
-
+# ---------------------------------------------------------------------------- #
 class TestOfTypes:
+    def test_empty_init(self):
+        CoI()
+        
+    
     @pytest.mark.parametrize(
         'base, allowed',
         (  # This should be OK since numbers.Real derives from numbers.Integral

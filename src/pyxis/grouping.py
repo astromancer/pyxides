@@ -52,7 +52,7 @@ class Groups(DefaultOrderedDict):
         super().__init__(factory, mapping, **kws)
 
     def __repr__(self):
-        return pformat(self, self.__class__.__name__)
+        return pformat(self)
 
     def at(self, index):
         """
