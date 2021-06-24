@@ -1,25 +1,27 @@
-# Pyxis
+# Pyxides
 
 > Containers for the python sages 🏺✨📦
 
 <!-- 
 TODO
-[![Build Status](https://travis-ci.com/astromancer/pyxis.svg?branch=master)](https://travis-ci.com/astromancer/pyxis)
-[![Documentation Status](https://readthedocs.org/projects/pyxis/badge/?version=latest)](https://pyxis.readthedocs.io/en/latest/?badge=latest)
-[![PyPI](https://img.shields.io/pypi/v/pyxis.svg)](https://pypi.org/project/pyxis)
-[![GitHub](https://img.shields.io/github/license/astromancer/pyxis.svg?color=blue)](https://pyxis.readthedocs.io/en/latest/license.html)
+[![Build Status](https://travis-ci.com/astromancer/pyxides.svg?branch=master)](https://travis-ci.com/astromancer/pyxides)
+[![Documentation Status](https://readthedocs.org/projects/pyxides/badge/?version=latest)](https://pyxides.readthedocs.io/en/latest/?badge=latest)
+[![PyPI](https://img.shields.io/pypi/v/pyxides.svg)](https://pypi.org/project/pyxides)
+[![GitHub](https://img.shields.io/github/license/astromancer/pyxides.svg?color=blue)](https://pyxides.readthedocs.io/en/latest/license.html)
  -->
 
-This is a python library for working with array-like containers.
+`pyxides` is a python library for working with array-like object containers.
 
-The name "pyxis" (ˈpik-səs) comes from the Greek word for the decorated cylindrical
-[containers from antiquity](https://en.m.wikipedia.org/wiki/Pyxis_(vessel)). The 
-name felt appropriate for a `python` library involving containers!
+
+The name "pyxides" is the plural form of the Greek word "pyxis" (πυξίς), the
+name for the decorated cylindrical [containers from
+antiquity](https://en.m.wikipedia.org/wiki/Pyxides_(vessel)). The name felt
+appropriate for a `python` library involving containers!
 
 # Install
 
 ```shell
-pip install pyxis
+pip install pyxides
 ```
 
 # Use
@@ -30,7 +32,7 @@ The `containers` module contains some ready-made container classes that can be
 used directly:
 
 ```python
-from pyxis.containers import ArrayLike1D
+from pyxides.containers import ArrayLike1D
 
 
 a = ArrayLike1D([1, 2, 3])
@@ -46,7 +48,7 @@ a[[0, 3, 5]]
 ### Type Enforcement
 To construct a container that only allows certain types of objects:
 ```python
-from pyxis.type_check import OfType
+from pyxides.type_check import OfType
 
 class Twinkie:
     """Yum!"""
@@ -66,7 +68,7 @@ twinkies.append(0)
 ### Vectorization
 TODO
 <!-- ```python
-from pyxis.
+from pyxides.
 
 
 ``` -->
@@ -74,7 +76,7 @@ from pyxis.
 ### Grouping containers
 TODO
 <!-- ```python
-from pyxis.
+from pyxides.
 
 
 ```   -->
@@ -89,13 +91,13 @@ The [`test suite`](./tests/test_splice.py) contains further examples of how
 `DocSplice` can be used.  Testing is done with `pytest`:
 
 ```shell
-pytest pyxis
+pytest pyxides
 ``` -->
 
 # Contribute
 Contributions are welcome!
 
-1. [Fork it!](https://github.com/astromancer/pyxis/fork)
+1. [Fork it!](https://github.com/astromancer/pyxides/fork)
 2. Create your feature branch\
     ``git checkout -b feature/rad``
 3. Commit your changes\
@@ -113,7 +115,7 @@ Contributions are welcome!
 
 # License
 
-* see [LICENSE](https://github.com/astromancer/pyxis/blob/master/LICENSE)
+* see [LICENSE](https://github.com/astromancer/pyxides/blob/master/LICENSE)
 
 <!-- 
 # Version

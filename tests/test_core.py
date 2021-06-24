@@ -8,7 +8,7 @@ import pytest
 import numpy as np
 
 #
-from pyxis.type_check import OfTypes, _TypeEnforcer
+from pyxides.type_check import OfTypes, _TypeEnforcer
 
 
 # pylint: disable=C0111     # Missing %s docstring

@@ -167,7 +167,7 @@ class _TypeEnforcer:
     """
     
     # TODO: inherit from UserList, so we can init like 
-    # from pyxis.type_check import OfType
+    # from pyxides.type_check import OfType
 
     # class Twinkie:
     #     """Yum!"""
