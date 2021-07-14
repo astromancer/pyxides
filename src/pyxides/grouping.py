@@ -15,7 +15,7 @@ import numpy as np
 from recipes.dicts import DefaultOrderedDict, pformat
 
 # relative libs
-from .vectorize import Vectorized, AttrVectorize
+from .vectorize import Vectorize, AttrVectorize
 
 
 SELECT_LOGIC = {'AND': np.logical_and,
@@ -180,7 +180,7 @@ class Groups(DefaultOrderedDict):
         for key, obj in self.items():
             if obj is None:
                 out[key] = None
-            elif isinstance(obj, Vectorized):
+            elif isinstance(obj, Vectorize):
                 out[key] = obj.attrs(*keys)
             else:
                 out[key] = op.attrgetter(*keys)(obj)

@@ -1,19 +1,17 @@
+# pylint: disable=missing-module-docstring
+# pylint: disable=missing-function-docstring
+# pylint: disable=missing-class-docstring
+# pylint: disable=no-self-use
+# pylint: disable=redefined-outer-name
 
-from pyxides.vectorize import CallVectorize, AttrVectorize
+
 import pytest
+from pyxides import ListOf
+from pyxides.vectorize import CallVectorize, AttrVectorize, AttrVector
 
 
 # ---------------------------------------------------------------------------- #
 # Cases
-
-class MyList(list, AttrVectorize):
-    """My list"""
-
-
-class Simple:
-    def __init__(self, i):
-        self.i = i
-        self.hello = Hello()
 
 
 class Hello:
@@ -23,12 +21,50 @@ class Hello:
 class Hi(list, CallVectorize):
     """Hi!"""
 
+################################################################################
+
+
+class List(list, AttrVectorize):
+    """My list"""
+
+
+class Simple:
+    def __init__(self, i):
+        self.i = i
+        self.hello = Hello()
+
+################################################################################
+
+
+class Letter:
+    def __init__(self, s):
+        self.letter = s
+        self.upper = s.upper()
+
+
+class Word(ListOf(Letter)):
+    def __init__(self, letters=()):
+        # initialize container
+        super().__init__(letters)
+
+    # properties: vectorized attribute getters on `letters`
+    letters = AttrVector('letter')
+    uppers = AttrVector('upper')
+
 # ---------------------------------------------------------------------------- #
 
 
 @pytest.fixture()
 def simple_list():
-    return MyList(map(Simple, [1, 2, 3]))
+
+    return List(map(Simple, [1, 2, 3]))
+
+
+def testAttrVector():
+
+    word = Word(map(Letter, 'hello!'))
+    assert word.letters == ['h', 'e', 'l', 'l', 'o', '!']
+    assert word.uppers == ['H', 'E', 'L', 'L', 'O', '!']
 
 
 class TestAttrVectorize:

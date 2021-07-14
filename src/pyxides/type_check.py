@@ -136,9 +136,9 @@ class OfTypes(ABCMeta):
         # indices = []
         # new_bases = list(bases)
 
-        idx_enf, idx_cnt, requested, currently_allowed = cls._get_allowed_types(
-            bases)
-
+        *indices, requested, currently_allowed = cls._get_allowed_types(bases)
+        idx_enf, idx_cnt = indices
+        
         # print('=' * 80)
         # print(name, bases)
         # print('requested', requested_allowed_types)
@@ -167,11 +167,11 @@ class OfTypes(ABCMeta):
                 # No container types in list of parents. Add it!
                 bases = (*bases[:idx_enf], UserList, *bases[idx_enf:])
             else:
-                requested = tuple(kls.__name__ for kls in requested)
+                requested = ', '.join(kls.__name__ for kls in requested)
                 raise TypeError(f'Using "{cls.__name__}({requested})" without '
                                 f'preceding container type in inheritence '
                                 f'diagram. Did you mean to use '
-                                f'"ListOf({requested}"?')
+                                f'"ListOf({requested})"?')
 
         if (idx_enf is None) or (idx_cnt is None):
             return bases
