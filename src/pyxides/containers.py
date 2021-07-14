@@ -14,7 +14,7 @@ from recipes.logging import LoggingMixin
 from .getitem import ItemGetter
 from .grouping import AttrGrouper
 from .pprint import PPrintContainer
-from .type_check import OfType  # @keep
+from .typing import OfType  # @keep
 
 
 class ArrayLike1D(ItemGetter, UserList):

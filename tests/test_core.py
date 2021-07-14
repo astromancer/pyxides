@@ -8,7 +8,7 @@ import pytest
 import numpy as np
 
 #
-from pyxides.type_check import OfType, ListOf, _TypeEnforcer
+from pyxides.typing import OfType, ListOf, _TypeEnforcer
 from recipes.testing import expected, mock, Throws, PASS
 
 # pylint: disable=C0111     # Missing %s docstring
