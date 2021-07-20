@@ -163,7 +163,7 @@ class OfTypes(ABCMeta):
         cls._check_allowed_types(name, requested, currently_allowed)
 
         if idx_cnt is None:
-            if cls is ListOf:
+            if issubclass(cls, ListOf):
                 # No container types in list of parents. Add it!
                 bases = (*bases[:idx_enf], UserList, *bases[idx_enf:])
             else:
