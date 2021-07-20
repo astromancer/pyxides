@@ -11,13 +11,13 @@ from recipes.oo import SelfAware, meta
 from recipes.logging import LoggingMixin
 
 # relative libs
-from .getitem import ItemGetter
+from .getitem import IndexerMixin
 from .grouping import AttrGrouper
 from .pprint import PPrintContainer
 from .typing import OfType  # @keep
 
 
-class ArrayLike1D(ItemGetter, UserList):
+class ArrayLike1D(IndexerMixin, UserList):
     """
     A container class that emulates a one dimensional numpy array,
     providing all the array slicing niceties.
