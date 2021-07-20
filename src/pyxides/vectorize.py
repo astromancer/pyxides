@@ -90,7 +90,7 @@ class AttrVector:
     ['H', 'E', 'L', 'L', 'O', '!']
 
     Note: The addition of `AttrVector`s are only necessary if you want direct
-    access to container item attributes. Alternatively, use the `attrs` method 
+    access to container item attributes. Alternatively, use the `attrs` method
     gained from `AttrVectorize`:
     >>> class Word(ListOf(Letter), AttrVectorize):
     ...     pass
@@ -114,6 +114,17 @@ class AttrVector:
         if self.keys:
             return self(*self.keys)
         return self
+
+    def __set__(self, instance, value):
+        n = len(self.keys)
+        if n == 0:
+            raise ValueError('Cannot set attribute.')
+
+        if n != 1:
+            raise NotImplementedError
+
+        key, = self.keys
+        self.set({key: value}, each=True)
 
     def __getattr__(self, name):
         if self.parent:
