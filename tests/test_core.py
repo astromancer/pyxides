@@ -33,24 +33,24 @@ class CoR(UserList, OfType(numbers.Real)):
 # ---------------------------------------------------------------------------- #
 
 
-ex = expected(
-    {  # This should be OK since numbers.Real derives from numbers.Integral
-        (CoR, numbers.Integral):    PASS,
-        # This should also be OK since bool derives from int
-        (Coi, bool):                PASS,
-        # multiple unrelated type estrictions requested in different
-        # bases of container
-        (CoI, float):                  Throws(TypeError),
-        # OfTypes used without preceding Container type
-        ((), float):                   Throws(TypeError),
-        (list, float):                 PASS
-    }
-)
+ex = expected({
+    # This should be OK since numbers.Real derives from numbers.Integral
+    (CoR, numbers.Integral):        PASS,
+    # This should also be OK since bool derives from int
+    (Coi, bool):                    PASS,
+    # multiple unrelated type estrictions requested in different
+    # bases of container
+    (CoI, float):                   Throws(TypeError),
+    # OfTypes used without preceding Container type
+    ((), float):                    Throws(TypeError),
+    (list, float):                  PASS
+})
+
 
 def multiple_inheritance(bases, allowed):
     if not isinstance(bases, tuple):
         bases = (bases, )
-        
+
     class CoX(*bases, OfType(allowed)):
         pass
 
@@ -59,14 +59,13 @@ def multiple_inheritance(bases, allowed):
     # make sure the `_allowed_types` got updated
     assert CoX._allowed_types == (allowed, )
 
-test_multiple_inheritance  = ex(multiple_inheritance)
+
+test_multiple_inheritance = ex(multiple_inheritance)
+
 
 class TestOfType:
     def test_empty_init(self):
         CoI()
-
-
-    
 
     @pytest.mark.parametrize(
         'Container, ok, bad',
@@ -76,6 +75,7 @@ class TestOfType:
     def test_type_checking(self, Container, ok, bad):
         #
         cx = Container(ok)
+        assert all(isinstance(_, Container._allowed_types) for _ in cx)
 
         with pytest.raises(TypeError):
             cx.append(bad[0])
@@ -85,3 +85,14 @@ class TestOfType:
 
         with pytest.raises(TypeError):
             Container(bad)
+
+    @pytest.mark.parametrize(
+        'Container, items',
+         # note passing floats, they should be converted to int
+        [(Coi, [1., 2., np.float(3.)])]
+    )
+    def test_type_coerce(self, Container, items):
+        Container.type_checking(-2)
+        
+        cx = Container(items)
+        assert all(isinstance(_, Container._allowed_types) for _ in cx)

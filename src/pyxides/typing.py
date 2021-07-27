@@ -9,6 +9,7 @@ from collections import abc, UserList
 
 
 # local libs
+from recipes.lists import split
 from recipes.iter import first_true_index
 from recipes.functionals import echo0, raises as bork
 
@@ -138,7 +139,7 @@ class OfTypes(ABCMeta):
 
         *indices, requested, currently_allowed = cls._get_allowed_types(bases)
         idx_enf, idx_cnt = indices
-        
+
         # print('=' * 80)
         # print(name, bases)
         # print('requested', requested_allowed_types)
@@ -161,11 +162,11 @@ class OfTypes(ABCMeta):
         #         new_bases.pop(ix - i)
 
         cls._check_allowed_types(name, requested, currently_allowed)
-
         if idx_cnt is None:
             if issubclass(cls, ListOf):
                 # No container types in list of parents. Add it!
-                bases = (*bases[:idx_enf], UserList, *bases[idx_enf:])
+                pre, post = split(bases, idx_enf + 1)
+                bases = (*pre, UserList, *post)
             else:
                 requested = ', '.join(kls.__name__ for kls in requested)
                 raise TypeError(f'Using "{cls.__name__}({requested})" without '
@@ -193,11 +194,28 @@ OfType = OfTypes
 
 class ListOf(OfType):
     """
-    Ensures inheritance from UserList
-    
+    A list ensuring items are of (a) certain type(s).
+
+    >>> class Twinkie:
+    ...     '''Yum!'''
+    ...
+    ... class Box(ListOf(Twinkie)):
+    ...     '''So much YUM!'''
+    ...
+    ... Box()
+
     >>> class Container(ListOf(int)):
     ...     pass
     """
+
+    def __str__(self):
+        return f'{self.__class__.__name__}[{", ".join(self._allowed_types)}]'
+
+# class TypeCoercer:
+#     convert = echo0
+
+def coerce():
+    pass
 
 
 class _TypeEnforcer:
@@ -205,52 +223,56 @@ class _TypeEnforcer:
     Item type checking mixin for list-like containers
     """
 
-    # TODO: inherit from UserList, so we can init like
-    # from pyxides.typing import OfType
-
-    # class Twinkie:
-    #     """Yum!"""
-
-    # class Box(OfType(Twinkie)):
-    #     """So much YUM!"""
-
-    # Box()
-
     _allowed_types = (object, )         # placeholder
-    _actions = {-1: echo0,              # silently ignore
+    _actions = {-2: coerce,             # Attempt convertion
+                -1: echo0,              # silently ignore invalid types
                 0: wrn.warn,            # emit warning
                 1: bork(TypeError)}     # raise TypeError
-    emit = staticmethod(_actions[1])    # default action is to raise
+    _default_action = 1                 # convertion off by default since not always sensible eg: numbers.Real
+    emit = staticmethod(_actions[_default_action])    # default action is to raise
+    convert = echo0                     # default convertion placeholder
 
     @classmethod
-    def type_checking(cls, severity=1):
-        cls.emit = staticmethod(cls._actions[int(severity)])
+    def type_checking(cls, severity=_default_action):
+        action = cls._actions[int(severity)]
+        if action is coerce:
+            cls.convert = cls.get_converter(True)
+        else:
+            cls.emit = staticmethod(action)
+
+    @classmethod
+    def get_converter(cls, convert):
+        if convert:
+            if len(cls._allowed_types) > 1:
+                raise ValueError(f'`convert` is ambiguous with polymorphic '
+                                 f'{cls}')
+            return cls._allowed_types[0]
+        return echo0
 
     def __init__(self, items=()):
         super().__init__(self.checks_type(items))
-        # self.emit = self._actions[int(severity)]
 
-    def checks_type(self, itr, raises=None, warns=None, silent=None):
+    def checks_type(self, itr, action=_default_action):
         """Generator that checks types"""
-        if raises is warns is silent is None:
-            # default behaviour decided at init (default is to raise TypeError)
-            raises = True
-
-        emit = self._actions[1 - first_true_index((raises, warns, silent))]
+        emit = self._actions[action]
         for i, obj in enumerate(itr):
             with wrn.catch_warnings():
                 wrn.filterwarnings('once', 'Items in container class')
-                self.check_type(obj, i, emit)
-                yield obj
+                yield self.check_type(obj, i, emit)
 
     def check_type(self, obj, i='', emit=None):
         """Type checker"""
         if isinstance(obj, self._allowed_types):
-            return
+            return obj
+
+        # convert or echo
+        obj = self.convert(obj)
+        if isinstance(obj, self._allowed_types):
+            return obj
 
         emit = emit or self.emit
         if emit is echo0:
-            return
+            return obj
 
         many = len(self._allowed_types) > 1
         ok = self._allowed_types[... if many else 0]
@@ -259,7 +281,7 @@ class _TypeEnforcer:
              f'Item {i}{" " * bool(i)} is of type {type(obj)!r}.')
 
     def append(self, item):
-        self.check_type(item, len(self))
+        item = self.check_type(item, len(self))
         super().append(item)
 
     def extend(self, itr):
