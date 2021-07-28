@@ -5,10 +5,15 @@
 # pylint: disable=redefined-outer-name
 
 
-from itertools import repeat
+
+# std libs
+import itertools as itt
+
+# third-party libs
 import pytest
 from pyxides import ListOf
-from pyxides.vectorize import CallVectorizerMixin, AttrVectorizerMixin, AttrVectorizer
+from pyxides.vectorize import (CallVectorizerMixin, AttrVectorizerMixin,
+                               AttrVectorizer, repeat)
 
 
 # ---------------------------------------------------------------------------- #
@@ -46,7 +51,6 @@ def simple_list():
     return List(map(Simple, [1, 2, 3]))
 
 
-
 # ---------------------------------------------------------------------------- #
 # Test
 
@@ -57,7 +61,6 @@ class TestAttrVectorizer:
         assert word.letters == list('hello!')
         assert word.uppers == list('HELLO!')
 
-    
     def test_setter(self, simple_list):
         # word = Word(map(Letter, 'hello!'))
         # word.letters = 'world!'
@@ -80,10 +83,13 @@ class TestAttrVectorizerMixin:
         assert simple_list.attrs('hello.world') == ['hi', 'hi', 'hi']
 
     def test_write(self, simple_list):
-        simple_list.attrs.set(i=repeat(2))
+        simple_list.attrs.set(i=itt.repeat(2))
         assert simple_list.attrs.i == [2, 2, 2]
 
         simple_list.attrs.set({'hello.world': 'xxx'})
+        assert simple_list.attrs('hello.world') == list('xxx')
+
+        simple_list.attrs.set(repeat({'hello.world': 'x'}))
         assert simple_list.attrs('hello.world') == list('xxx')
 
 

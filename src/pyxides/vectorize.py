@@ -12,6 +12,14 @@ from recipes.op import MethodCaller, AttrGetter, AttrSetter, NULL
 from recipes.functionals import echo0
 
 
+class repeat(dict):
+    """Helper class for repeating scalar objects"""
+
+    def __init__(self, mapping=(), **kws):
+        kws = dict(mapping, **kws)
+        super().__init__(zip(kws, map(itt.repeat, kws.values())))
+
+
 class AttrVectorizer(AttrGetter):
     # TODO: optional caching for properties
     """
@@ -116,7 +124,7 @@ class AttrVectorizer(AttrGetter):
         ----------
         target : abc.Collection
             Target container of objects for which attributes will be set
-        mapping: dict
+        mapping: dict or repeat
             (key, value) pairs to be assigned on each item in the container.
             Attribute names can be chained 'like.this' to set values on deeply
             nested objects in the container.
