@@ -5,37 +5,14 @@
 # pylint: disable=redefined-outer-name
 
 
+from itertools import repeat
 import pytest
 from pyxides import ListOf
-from pyxides.vectorize import CallVectorize, AttrVectorize, AttrVector
+from pyxides.vectorize import CallVectorizerMixin, AttrVectorizerMixin, AttrVectorizer
 
 
 # ---------------------------------------------------------------------------- #
 # Cases
-
-
-class Hello:
-    world = 'hi'
-
-
-class Hi(list, CallVectorize):
-    """Hi!"""
-
-################################################################################
-
-
-class List(list, AttrVectorize):
-    """My list"""
-
-
-class Simple:
-    def __init__(self, i):
-        self.i = i
-        self.hello = Hello()
-
-################################################################################
-
-
 class Letter:
     def __init__(self, s):
         self.letter = s
@@ -43,45 +20,84 @@ class Letter:
 
 
 class Word(ListOf(Letter)):
-    def __init__(self, letters=()):
-        # initialize container
-        super().__init__(letters)
 
     # properties: vectorized attribute getters on `letters`
-    letters = AttrVector('letter')
-    uppers = AttrVector('upper')
+    letters = AttrVectorizer('letter')
+    uppers = AttrVectorizer('upper')
 
-# ---------------------------------------------------------------------------- #
+
+class Hello:
+    world = 'hi'
+
+
+class Simple:
+    def __init__(self, i):
+        self.i = i
+        self.hello = Hello()
+
+
+class List(list, AttrVectorizerMixin):
+    """My list"""
+    ii = AttrVectorizer('i')
 
 
 @pytest.fixture()
 def simple_list():
-
     return List(map(Simple, [1, 2, 3]))
 
 
-def testAttrVector():
 
-    word = Word(map(Letter, 'hello!'))
-    assert word.letters == ['h', 'e', 'l', 'l', 'o', '!']
-    assert word.uppers == ['H', 'E', 'L', 'L', 'O', '!']
+# ---------------------------------------------------------------------------- #
+# Test
 
 
-class TestAttrVectorize:
+class TestAttrVectorizer:
+    def test_getter(self):
+        word = Word(map(Letter, 'hello!'))
+        assert word.letters == list('hello!')
+        assert word.uppers == list('HELLO!')
+
+    
+    def test_setter(self, simple_list):
+        # word = Word(map(Letter, 'hello!'))
+        # word.letters = 'world!'
+        # word.uppers == 'WORLD!'.split()
+
+        simple_list.ii = [1, 2, 3]
+        assert [s.i for s in simple_list] == [1, 2, 3]
+
+        with pytest.raises(TypeError):
+            simple_list.ii = 2
+
+        with pytest.raises(ValueError):
+            simple_list.ii = [2]
+
+
+class TestAttrVectorizerMixin:
 
     def test_read(self, simple_list):
         assert simple_list.attrs.i == [1, 2, 3]
         assert simple_list.attrs('hello.world') == ['hi', 'hi', 'hi']
 
     def test_write(self, simple_list):
-        simple_list.attrs.set(i=2)
+        simple_list.attrs.set(i=repeat(2))
         assert simple_list.attrs.i == [2, 2, 2]
 
-        simple_list.attrs.set({'hello.world': 'x'})
-        assert simple_list.attrs('hello.world') == ['x', 'x', 'x']
+        simple_list.attrs.set({'hello.world': 'xxx'})
+        assert simple_list.attrs('hello.world') == list('xxx')
 
 
-class TestCallVectorize:
+# ---------------------------------------------------------------------------- #
+
+
+class Hi(list, CallVectorizerMixin):
+    """Hi!"""
+
+# ---------------------------------------------------------------------------- #
+# Test
+
+
+class TestCallVectorizerMixin:
 
     def test_calls(self):
         hi = Hi('hello')

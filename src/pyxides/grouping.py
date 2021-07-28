@@ -15,7 +15,7 @@ import numpy as np
 from recipes.dicts import DefaultOrderedDict, pformat
 
 # relative libs
-from .vectorize import Vectorize, AttrVectorize
+from .vectorize import Vectorized, AttrVectorizerMixin
 
 
 SELECT_LOGIC = {'AND': np.logical_and,
@@ -180,14 +180,14 @@ class Groups(DefaultOrderedDict):
         for key, obj in self.items():
             if obj is None:
                 out[key] = None
-            elif isinstance(obj, Vectorize):
+            elif isinstance(obj, Vectorized):
                 out[key] = obj.attrs(*keys)
             else:
                 out[key] = op.attrgetter(*keys)(obj)
         return out
 
 
-class AttrGrouper(AttrVectorize):
+class AttrGrouper(AttrVectorizerMixin):
     """
     Abstraction layer that can group, split and sort multiple data sets
     """
