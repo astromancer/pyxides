@@ -2,6 +2,7 @@
 Classes for grouping containers
 """
 
+
 # std libs
 import operator as op
 import functools as ftl
@@ -15,12 +16,15 @@ import numpy as np
 from recipes.dicts import DefaultOrderedDict, pformat
 
 # relative libs
-from .vectorize import Vectorized, AttrVectorizerMixin
+from .vectorize import CallVector, Vectorized, AttrVectorizerMixin
 
 
 SELECT_LOGIC = {'AND': np.logical_and,
                 'OR': np.logical_or,
                 'XOR': np.logical_xor}
+
+def NULL():
+    pass
 
 
 class Groups(DefaultOrderedDict):
@@ -33,6 +37,9 @@ class Groups(DefaultOrderedDict):
 
     group_id = (), {}
 
+    # Method vectorizer
+    calls = CallVector()
+        
     # This class should never be instantiated directly, only by the new_group
     # method of AttrGrouper, which sets `group_id`
 
@@ -75,7 +82,7 @@ class Groups(DefaultOrderedDict):
         list_like = self.default_factory()
         # filter None since we use that to represent empty group
         for obj in filter(None, self.values()):
-            if isinstance(obj, abc.Container): # type(list_like)
+            if isinstance(obj, abc.Container):  # type(list_like)
                 list_like.extend(obj)
             else:
                 list_like.append(obj)
@@ -114,12 +121,12 @@ class Groups(DefaultOrderedDict):
 
     def varies_by(self, *keys):
         """
-        Check whether the attribute value mapped to by `key` varies across
+        Check whether the attribute value(s) mapped to by `keys` varies across
         the set of observing runs
 
         Parameters
         ----------
-        key
+        keys
 
         Returns
         -------
@@ -145,7 +152,7 @@ class Groups(DefaultOrderedDict):
     #                           *(next(it) for _, it in itt.groupby(self, id)))
 
     def map(self, func, *args, **kws):
-        # runs an arbitrary function on each shocCampaign in the group
+        # runs an arbitrary function on each shocCampaign in the grouping
         assert callable(func)
         out = self.__class__(self.default_factory)
         out.group_id = self.group_id
@@ -153,27 +160,6 @@ class Groups(DefaultOrderedDict):
         for key, obj in self.items():
             out[key] = None if obj is None else func(obj, *args, **kws)
         return out
-
-    def calls(self, name, *args, **kws):
-        """
-        For each group of observations (shocCampaign), call the
-        method with name `name`  passing  `args` and `kws`.
-
-        Parameters
-        ----------
-        name
-        args
-        kws
-
-        Returns
-        -------
-
-        """
-
-        def run_method(obj, *args, **kws):
-            return getattr(obj, name)(*args, **kws)
-
-        return self.map(run_method, *args, **kws)
 
     def attrs(self, *keys):
         out = {}
@@ -277,6 +263,8 @@ class AttrGrouper(AttrVectorizerMixin):
         kws can be (attribute, callable) pairs in which case sorting will be
          done according to value returned by callable on a given attribute.
         """
+        if len(self) < 1:
+            return self
 
         vals = get_sort_values(self, *keys, **kws)
         # if not len(vals):
@@ -290,7 +278,7 @@ class AttrGrouper(AttrVectorizerMixin):
         idx, _ = zip(*sorted(enumerate(vals), key=op.itemgetter(1)))
         return self[list(idx)]
 
-    def select_by(self, logic='AND', **kws):
+    def selection(self, logic='AND', **kws):
         if not kws:
             raise ValueError('No criteria for selection provided.')
 
@@ -302,8 +290,10 @@ class AttrGrouper(AttrVectorizerMixin):
                 seek = ftl.partial(op.eq, seek)
 
             selection = logic(selection, list(map(seek, vals)))
-        #
-        return self[selection]
+        return selection
+
+    def select_by(self, logic='AND', **kws):
+        return self[self.selection(logic, **kws)]
 
 
 def get_sort_values(self, *keys, **kws):

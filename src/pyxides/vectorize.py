@@ -11,6 +11,13 @@ import itertools as itt
 from recipes.op import MethodCaller, AttrGetter, AttrSetter, NULL
 from recipes.functionals import echo0
 
+from recipes.logging import logging, get_module_logger
+
+# module level logger
+logger = get_module_logger()
+logging.basicConfig()
+logger.setLevel(logging.DEBUG)
+
 
 class repeat(dict):
     """Helper class for repeating scalar objects"""
@@ -159,11 +166,13 @@ class AttrVectorizer(AttrGetter):
         TypeError
             If any value is not `abc.Collection` or `itt.repeat`.
         """
+
         kws = dict(mapping or {}, **kws)
 
         # check values are same length as container before we attempt to set
         # any attributes
         size = len(target)
+        assert size
         for key, values in kws.items():
             if isinstance(values, abc.Sized) and (len(values) != size):
                 raise ValueError(
@@ -182,9 +191,10 @@ class AttrVectorizer(AttrGetter):
         setter = AttrSetter(*kws.keys())
         for item, values in zip(target, zip(*kws.values())):
             setter(item, values)
+            # assert tuple([getattr(item, k) for k in kws.keys()]) == values
 
 
-class AttrVector:
+class AttrVector:  # This is already actually an AttrTable!!
     """
     Vectorize attribute lookup on items in a container.
 
@@ -220,9 +230,9 @@ class AttrVector:
     ['hi', 'hi', 'hi']
     """
 
-    def __init__(self):
+    def __init__(self, target=None):
         # self.name = ''
-        self.target = None
+        self.target = target
 
     def __getattr__(self, name):
         if self.target:
@@ -251,11 +261,39 @@ class AttrVector:
         return AttrVectorizer(*attrs, default=NULL, defaults=None)(self.target)
 
     def __get__(self, instance, objtype=None):
-        self.target = instance  # None if called from class
-        return self
+        # self.target = instance  # None if called from class
+        return self.__class__(instance)
 
     def set(self, mapping=(), **kws):
         return AttrVectorizer.set(self.target, mapping, **kws)
+
+
+class _MethodVectorizer(MethodCaller):
+    def __init__(self, *args, convert=list, **kws):
+        super().__init__(*args, **kws)
+        assert callable(convert)
+        self.convert = convert
+
+    def __call__(self, target):
+        return self.convert(map(super().__call__, target))
+
+
+class _GroupMethodVectorizer(_MethodVectorizer):
+    def __call__(self, target):
+        result = type(target).fromkeys(target.keys())
+        result.default_factory = target.default_factory
+        result.group_id = target.group_id
+
+        # Call method with `self.name` on each value in dict
+        result.update({
+            key: MethodCaller.__call__(self, val)
+                for key, val in target.items() if val
+                })
+        return result
+
+# Vectorization dispatchers
+# @ftl.singledispatch
+# def vectorize(target)
 
 
 class MethodVectorizer:
@@ -285,18 +323,30 @@ class MethodVectorizer:
     >>> fmt.mod(['My favourite number is π:', math.pi])
     """
 
-    def __init__(self, name, target=None):
+    def __init__(self, name, target=None, convert=echo0):
         self.name = name
         self.target = target
+        self.convert = convert
 
     def __call__(self, *args, **kws):
-        # >>> container.calls('upper')
-        # >>> container.calls('join', '||')
         assert self.target
-        return list(map(MethodCaller(self.name, *args, **kws), self.target))
+
+        if isinstance(self.target, abc.MutableMapping):
+            kls = _GroupMethodVectorizer
+        elif isinstance(self.target, abc.Collection):
+            kls = _MethodVectorizer
+        else:
+            raise TypeError(f'Cannot vectorize object of type '
+                            f'{type(self.target)}.')
+
+        try:
+            return kls(self.name, *args, **kws)(self.target)
+        finally:
+            # ensure target gets reset
+            self.target = None
 
     def __get__(self, instance, objtype=None):
-        self.target = instance  # None if called from class
+        self.target = instance  # None if accessed from class
         return self
 
 
@@ -316,16 +366,22 @@ class CallVector(MethodVectorizer):
     [b'h', b'e', b'l', b'l', b'o']
     """
 
-    def __init__(self, name=None, target=None):
-        super().__init__(name, target)
+    def __init__(self):
+        super().__init__(self, None)
+
+    def __call__(self, name, *args, **kws):
+        # >>> container.calls('upper')
+        # >>> container.calls('join', '||')
+        self.name = name
+        try:
+            super().__call__(*args, **kws)
+        finally:
+            self.name = None
 
     def __getattr__(self, name):
-        # if self.name:
-        #     self.name = '.'.join((self.name, name))
-        #     return self
-
-        self.name = name
-        return self
+        # >>> container.calls.upper()
+        # >>> container.calls.join('||')
+        return MethodVectorizer(name, self.target)
 
 
 # class _GroupCallVectorizer(MethodVectorizer):
