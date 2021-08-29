@@ -1,9 +1,9 @@
 
-# std libs
+# std
 import numbers
 from collections import UserList
 
-# third-party libs
+# third-party
 import pytest
 import numpy as np
 

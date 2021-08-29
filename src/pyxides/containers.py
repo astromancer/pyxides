@@ -3,14 +3,14 @@ Container magic
 """
 
 
-# std libs
+# std
 from collections import UserList
 
-# local libs
+# local
 from recipes.oo import SelfAware, meta
 from recipes.logging import LoggingMixin
 
-# relative libs
+# relative
 from .getitem import IndexerMixin
 from .grouping import AttrGrouper
 from .pprint import PPrintContainer

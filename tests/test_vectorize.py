@@ -6,10 +6,10 @@
 
 
 
-# std libs
+# std
 import itertools as itt
 
-# third-party libs
+# third-party
 import pytest
 from pyxides import ListOf
 from pyxides.vectorize import (CallVectorizerMixin, AttrVectorizerMixin,

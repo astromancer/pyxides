@@ -2,12 +2,12 @@
 Vectorization helpers
 """
 
-# std libs
+# std
 
 from collections import abc
 import itertools as itt
 
-# local libs
+# local
 from recipes.op import MethodCaller, AttrGetter, AttrSetter, NULL
 from recipes.functionals import echo0
 

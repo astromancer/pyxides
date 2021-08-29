@@ -3,19 +3,19 @@ Classes for grouping containers
 """
 
 
-# std libs
+# std
 import operator as op
 import functools as ftl
 import itertools as itt
 from collections import abc
 
-# third-party libs
+# third-party
 import numpy as np
 
-# local libs
+# local
 from recipes.dicts import DefaultOrderedDict, pformat
 
-# relative libs
+# relative
 from .vectorize import CallVector, Vectorized, AttrVectorizerMixin
 
 

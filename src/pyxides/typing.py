@@ -2,13 +2,13 @@
 Enable construction of containers with uniform item type(s)
 """
 
-# std libs
+# std
 import warnings as wrn
 from abc import ABCMeta
 from collections import abc, UserList
 
 
-# local libs
+# local
 from recipes.lists import split
 from recipes.iter import first_true_index
 from recipes.functionals import echo0, raises as bork
