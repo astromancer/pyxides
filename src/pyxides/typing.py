@@ -209,7 +209,8 @@ class ListOf(OfType):
     """
 
     def __str__(self):
-        return f'{self.__class__.__name__}[{", ".join(self._allowed_types)}]'
+        names = ', '.join(kls.__name__ for kls in self._allowed_types)
+        return f'{self.__class__.__name__}[{names}]'
 
 # class TypeCoercer:
 #     convert = echo0

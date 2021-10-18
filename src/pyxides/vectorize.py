@@ -27,16 +27,34 @@ class repeat(dict):
         super().__init__(zip(kws, map(itt.repeat, kws.values())))
 
 
-class AttrVectorizer(AttrGetter):
+class vdict(dict):
+    """
+    Dictionary with vectorized item lookup.
+    """
+
+    def __getitem__(self, key):
+        # dispatch on np.ndarray for vectorized item getting with arbitrary
+        # nesting
+        if isinstance(key, abc.Collection):
+            # Container and not str
+            return [self[_] for _ in key]
+
+        if key in (Ellipsis, None):
+            return list(self.values())
+
+        return super().__getitem__(key)
+
+
+class AttrVector(AttrGetter):  #
     # TODO: optional caching for properties
     """
     Vectorize specific attribute lookup over items in a container with this
-    descriptor.
+    data descriptor.
 
     Examples
     --------
 
-    The next example demonstrates using `AttrVectorizer` as a property for
+    The next example demonstrates using `AttrVector` as a property for
     vectorized lookup of a specific attribute. Consider if we want to use the
     'stems' attribute of a `Sentence` class to represent the list of 'stem'
     attributes of `Word` objects in the container. The normal property
@@ -47,16 +65,16 @@ class AttrVectorizer(AttrGetter):
     ...         self.word = str(word)
     ...         self.stem = str(stem)
 
-    >>> class Sentence(ListOf(Word), AttrVectorizer):
+    >>> class Sentence(ListOf(Word), AttrVector):
     ...     @property
     ...     def stems(self):
     ...         return self.attrs('stem')
 
-    The `AttrVectorizer` class allows you to write thess kind of definitions
+    The `AttrVector` class allows you to write thess kind of definitions
     more succinctly without the explicit function definition as:
 
-    >>> class Sentence(ListOf(Word), AttrVectorizer):
-    ...     stems = AttrVectorizer('stem')
+    >>> class Sentence(ListOf(Word), AttrVector):
+    ...     stems = AttrVector('stem')
 
 
     A more complete (although still somewhat contrived) example
@@ -71,8 +89,8 @@ class AttrVectorizer(AttrGetter):
     ...         super().__init__(letters)
     ...
     ...         # properties: vectorized attribute getters on `Letter` objects
-    ...         letters = AttrVectorizer('letter')
-    ...         uppers = AttrVectorizer('upper')
+    ...         letters = AttrVector('letter')
+    ...         uppers = AttrVector('upper')
     ...
     ... word = Word('hello!')
     ... word.letters # effectively does [_.letter for _ in word]
@@ -81,13 +99,12 @@ class AttrVectorizer(AttrGetter):
     ['H', 'E', 'L', 'L', 'O', '!']
 
 
-    Note: Explicitly adding `AttrVectorizer` instances as class attributes (as
+    Note: Explicitly adding `AttrVector` instances as class attributes (as
     above) is only necessary if you want direct access to container item
     attributes through a container attribute. Alternatively, use the `attrs`
-    attribute gained from `AttrVectorizerMixin` for indirect non-specific
-    attribute access:
+    attribute gained from `AttrTabulate` for dynamic attribute access:
 
-    >>> class Word(ListOf(Letter), AttrVectorizerMixin):
+    >>> class Word(ListOf(Letter), AttrTabulate):
     ...     '''This class supports vectorized attribute lookup through the
     ...     `attrs` property.'''
     ...
@@ -102,7 +119,15 @@ class AttrVectorizer(AttrGetter):
         self.convert = convert
 
     def __call__(self, target):
-        return self.convert(list(map(super().__call__, target)))
+        return self.convert(list(self.map(target)))
+
+    def map(self, target):
+        assert isinstance(target, abc.Collection)
+        return map(super().__call__, target)
+
+    def filter(self, *args):
+        *test, target = args
+        return filter(test or None, self.map(target))
 
     def __get__(self, instance, objtype=None):
         if instance is None:  # called from class
@@ -125,7 +150,14 @@ class AttrVectorizer(AttrGetter):
     @staticmethod
     def set(target, mapping=(), /, **kws):
         """
-        Set attributes on the items in the container.
+        This method is used to manipulate the attributes of many objects at
+        once. It sets values of one or more specified attributes on all the
+        objects in a `target` container.  Attribute value pairs can be provided
+        as a mapping, as the first positional argument, or as keyword value
+        pairs. Values provided should either be lists or tuples of the same size
+        as the target container, or, if all target objects are to have the same
+        attribute value, a `repeat` object.
+
 
         Parameters
         ----------
@@ -148,7 +180,7 @@ class AttrVectorizer(AttrGetter):
         ...         self.plural = naive_plural(self.word)
         ...
         ... class Sentence(ListOf(Word)):
-        ...     plurals = AttrVectorizer('plural')
+        ...     plurals = AttrVector('plural')
         ...
         ... sentence = Sentence('one world!'.split())
         ... sentence.plurals
@@ -194,13 +226,12 @@ class AttrVectorizer(AttrGetter):
             # assert tuple([getattr(item, k) for k in kws.keys()]) == values
 
 
-class AttrVector:  # This is already actually an AttrTable!!
+class AttrTableDescriptor: 
     """
-    Vectorize attribute lookup on items in a container.
+    Vectorized attribute lookup on items in a container.
 
-    This descriptor class for containers enables getting attributes
-    more easily from the items in the container. i.e vectorized attribute lookup
-    across contained objects.
+    This is a descriptor class for container classes that vectorizes attribute
+    lookup across objects in the container.
 
     Examples
     --------
@@ -210,7 +241,7 @@ class AttrVector:  # This is already actually an AttrTable!!
     >>> import time
     ...
     ... class MyList(list):
-    ...    attrs  = AttrVector()
+    ...    getattrs  = AttrTableDescriptor()
     ...
     ... class Simple:
     ...     def __init__(self, i):
@@ -222,19 +253,31 @@ class AttrVector:  # This is already actually an AttrTable!!
     ...     world = 'hi'
     ...
     ... l = MyList(map(Simple, [1, 2, 3]))
-    >>> l.attrs.i
-    [1, 2, 3]
-    >>> l.attrs.t
-    [1625738233.40768, 1625738233.407681, 1625738233.4076815]
-    >>> l.attrs('hello.world')
+
+    >>> l.getattrs('hello.world')
     ['hi', 'hi', 'hi']
+
+    Attributes of the children can also be accessed as attributes of this object
+    eg:
+    >>> l.getattrs.i
+    [1, 2, 3]
+    >>> l.getattrs.t
+    [1625738233.40768, 1625738233.407681, 1625738233.4076815]
+
     """
 
+    # TODO ADD optional static attributes here ?! 
+    # Can optionally, be initialized with a set of static attributes names, in
+    # which case, the call method can be used without parameters to lookup those
+    # attribute values. 
+    
     def __init__(self, target=None):
         # self.name = ''
         self.target = target
 
     def __getattr__(self, name):
+        # hack attribute lookup to vectorize across container if possible as a
+        # shortcut. ie. self.attr.name does self.getattrs('name')
         if self.target:
             return self(name)
         return super().__getattribute__(name)
@@ -258,14 +301,14 @@ class AttrVector:  # This is already actually an AttrTable!!
         list or list of tuples
             The attribute values for each object in the container and each key
         """
-        return AttrVectorizer(*attrs, default=NULL, defaults=None)(self.target)
+        return AttrVector(*attrs, default=NULL, defaults=None)(self.target)
 
     def __get__(self, instance, objtype=None):
         # self.target = instance  # None if called from class
         return self.__class__(instance)
 
     def set(self, mapping=(), **kws):
-        return AttrVectorizer.set(self.target, mapping, **kws)
+        return AttrVector.set(self.target, mapping, **kws)
 
 
 class _MethodVectorizer(MethodCaller):
@@ -285,10 +328,10 @@ class _GroupMethodVectorizer(_MethodVectorizer):
         result.group_id = target.group_id
 
         # Call method with `self.name` on each value in dict
-        result.update({
-            key: MethodCaller.__call__(self, val)
-                for key, val in target.items() if val
-                })
+        result.update(
+            {key: MethodCaller.__call__(self, val)
+                for key, val in target.items() if val}
+        )
         return result
 
 # Vectorization dispatchers
@@ -339,23 +382,22 @@ class MethodVectorizer:
             raise TypeError(f'Cannot vectorize object of type '
                             f'{type(self.target)}.')
 
-        try:
-            return kls(self.name, *args, **kws)(self.target)
-        finally:
-            # ensure target gets reset
-            self.target = None
+        result = kls(self.name, *args, **kws)(self.target)
+        # ensure target gets reset
+        self.target = None
+        return result
 
     def __get__(self, instance, objtype=None):
         self.target = instance  # None if accessed from class
         return self
 
 
-class CallVector(MethodVectorizer):
+class CallVectorizerDescriptor(MethodVectorizer):
     """
     Descriptor for generalized method vectorization over objects in a container.
 
     >>> class Hi(list):
-    ...    calls = CallVector()
+    ...    calls = CallVectorizerDescriptor()
     ...
     ... hi = Hi('hello')
     >>> hi.calls.upper()
@@ -373,10 +415,9 @@ class CallVector(MethodVectorizer):
         # >>> container.calls('upper')
         # >>> container.calls('join', '||')
         self.name = name
-        try:
-            super().__call__(*args, **kws)
-        finally:
-            self.name = None
+        result = super().__call__(*args, **kws)
+        self.name = None
+        return result
 
     def __getattr__(self, name):
         # >>> container.calls.upper()
@@ -390,7 +431,7 @@ class CallVector(MethodVectorizer):
 #                 for key, _ in self._container.items()}
 
 
-class AttrVectorizerMixin:
+class AttrTabulate:
     """
     This is a mixin class for containers that allows getting attributes from
     the objects in the container. i.e vectorized attribute lookup across
@@ -398,7 +439,7 @@ class AttrVectorizerMixin:
 
     This example demonstrates how to automate attribute retrieval
     >>> import time
-    >>> class MyList(list, AttrVectorizerMixin):
+    >>> class MyList(list, AttrTabulate):
     >>>    pass
 
     >>> class Simple:
@@ -412,7 +453,7 @@ class AttrVectorizerMixin:
 
     """
 
-    attrs = AttrVector()
+    attrs = getattrs = AttrTableDescriptor()
 
     def varies_by(self, *keys):
         """
@@ -434,13 +475,13 @@ class AttrVectorizerMixin:
         return len(set(self.attrs(*keys))) > 1
 
 
-class CallVectorizerMixin:
+class MethodVectorizerMixin:
     # todo docsplice
     """
     Call vectorizer mixin. Gives inheritors the 'calls' method that can be used
     for vectorized function calls on objects inside the container.
 
-    >>> class Hi(list, CallVectorizerMixin):
+    >>> class Hi(list, MethodVectorizerMixin):
     ...    '''Class has `calls` method for vectorized method calling on items'''
     ...
     ... hi = Hi('hello')
@@ -451,10 +492,10 @@ class CallVectorizerMixin:
     >>> hi.calls.encode(encoding='latin')
     [b'h', b'e', b'l', b'l', b'o']
     """
-    calls = CallVector()
+    calls = CallVectorizerDescriptor()
 
 
-class Vectorized(CallVectorizerMixin, AttrVectorizerMixin):
+class Vectorized(MethodVectorizerMixin, AttrTabulate):
     """
     Mixin class for the vectorization API that embues inheritors with vectorized
     method calls through the `calls` class attribute and vectorized attribute

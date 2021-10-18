@@ -12,8 +12,8 @@ import itertools as itt
 # third-party
 import pytest
 from pyxides import ListOf
-from pyxides.vectorize import (CallVectorizerMixin, AttrVectorizerMixin,
-                               AttrVectorizer, repeat)
+from pyxides.vectorize import (MethodVectorizerMixin, AttrTabulate,
+                               AttrVector, repeat)
 
 
 # ---------------------------------------------------------------------------- #
@@ -27,8 +27,8 @@ class Letter:
 class Word(ListOf(Letter)):
 
     # properties: vectorized attribute getters on `letters`
-    letters = AttrVectorizer('letter')
-    uppers = AttrVectorizer('upper')
+    letters = AttrVector('letter')
+    uppers = AttrVector('upper')
 
 
 class Hello:
@@ -41,9 +41,9 @@ class Simple:
         self.hello = Hello()
 
 
-class List(list, AttrVectorizerMixin):
+class List(list, AttrTabulate):
     """My list"""
-    ii = AttrVectorizer('i')
+    ii = AttrVector('i')
 
 
 @pytest.fixture()
@@ -55,7 +55,7 @@ def simple_list():
 # Test
 
 
-class TestAttrVectorizer:
+class TestAttrVector:
     def test_getter(self):
         word = Word(map(Letter, 'hello!'))
         assert word.letters == list('hello!')
@@ -76,7 +76,7 @@ class TestAttrVectorizer:
             simple_list.ii = [2]
 
 
-class TestAttrVectorizerMixin:
+class TestAttrTabulate:
 
     def test_read(self, simple_list):
         assert simple_list.attrs.i == [1, 2, 3]
@@ -96,14 +96,14 @@ class TestAttrVectorizerMixin:
 # ---------------------------------------------------------------------------- #
 
 
-class Hi(list, CallVectorizerMixin):
+class Hi(list, MethodVectorizerMixin):
     """Hi!"""
 
 # ---------------------------------------------------------------------------- #
 # Test
 
 
-class TestCallVectorizerMixin:
+class TestMethodVectorizerMixin:
 
     def test_calls(self):
         hi = Hi('hello')

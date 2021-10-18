@@ -16,7 +16,7 @@ import numpy as np
 from recipes.dicts import DefaultOrderedDict, pformat
 
 # relative
-from .vectorize import CallVector, Vectorized, AttrVectorizerMixin
+from .vectorize import CallVectorizerDescriptor, Vectorized, AttrTabulate
 
 
 SELECT_LOGIC = {'AND': np.logical_and,
@@ -38,7 +38,7 @@ class Groups(DefaultOrderedDict):
     group_id = (), {}
 
     # Method vectorizer
-    calls = CallVector()
+    calls = CallVectorizerDescriptor()
         
     # This class should never be instantiated directly, only by the new_group
     # method of AttrGrouper, which sets `group_id`
@@ -173,7 +173,7 @@ class Groups(DefaultOrderedDict):
         return out
 
 
-class AttrGrouper(AttrVectorizerMixin):
+class AttrGrouper(AttrTabulate):
     """
     Abstraction layer that can group, split and sort multiple data sets
     """
