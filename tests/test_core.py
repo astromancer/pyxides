@@ -1,15 +1,17 @@
 
 # std
 import numbers
+import contextlib
+import itertools as itt
 from collections import UserList
 
 # third-party
 import pytest
-import numpy as np
+from pytest_steps import test_steps
 
-#
-from pyxides.typing import OfType, ListOf, _TypeEnforcer
-from recipes.testing import expected, mock, Throws, PASS
+# local
+from recipes.testing import PASS, Throws, expected
+from pyxides.typing import ListOf, OfType, _TypeEnforcer
 
 # pylint: disable=C0111     # Missing %s docstring
 # pylint: disable=R0201     # Method could be a function
@@ -28,6 +30,10 @@ class CoI(UserList, OfType(numbers.Integral)):
 
 
 class CoR(UserList, OfType(numbers.Real)):
+    pass
+
+
+class CoiCoerceFloat(ListOf(int, coerce={float: int})):
     pass
 
 # ---------------------------------------------------------------------------- #
@@ -62,37 +68,60 @@ def multiple_inheritance(bases, allowed):
 
 test_multiple_inheritance = ex(multiple_inheritance)
 
+_contexts = {'raise': pytest.raises(TypeError),
+             'warn': pytest.warns(UserWarning),
+             'ignore': contextlib.nullcontext()}
+
 
 class TestOfType:
+
     def test_empty_init(self):
         CoI()
 
+    @test_steps('init_good', 'init_bad', 'append', 'extend')
     @pytest.mark.parametrize(
-        'Container, ok, bad',
-        [(CoI, [1, 2, 3], [1.]),
-         (CoR, [1, np.float(1.)], [1j])]
+        'Container, init, bad, action',
+        [*itt.product([CoI], [(1, 2, 3)], [1.], _contexts),
+         *itt.product([CoR], [(1., 2.)], [1j], _contexts)]
     )
-    def test_type_checking(self, Container, ok, bad):
+    def test_type_checking(self, Container, init, bad, action):
         #
-        cx = Container(ok)
+        Container.set_type_validation(action)
+        cx = Container(init)
         assert all(isinstance(_, Container._allowed_types) for _ in cx)
+        yield
 
-        with pytest.raises(TypeError):
-            cx.append(bad[0])
+        context = _contexts[action]
+        with context:
+            Container([bad])
+        yield
 
-        with pytest.raises(TypeError):
-            cx.extend(bad)
+        with context:
+            cx.append(bad)
+        yield
 
-        with pytest.raises(TypeError):
-            Container(bad)
+        with context:
+            cx.extend([bad])
+        yield
 
+    @test_steps('init',  'append', 'extend')
     @pytest.mark.parametrize(
-        'Container, items',
-         # note passing floats, they should be converted to int
-        [(Coi, [1., 2., np.float(3.)])]
+        'Container, init, add, action',
+        [(CoiCoerceFloat, (1, 2, 3.), 1., 'ignore'),
+         (CoiCoerceFloat, (1, 2, 3.), 1j, 'raise')]
     )
-    def test_type_coerce(self, Container, items):
-        Container.type_checking(-2)
-        
-        cx = Container(items)
+    def test_type_coercion(self, Container, init, add, action):
+        #
+        cx = Container(init)
         assert all(isinstance(_, Container._allowed_types) for _ in cx)
+        yield
+
+        context = _contexts[action]
+
+        with context:
+            cx.append(add)
+        yield
+
+        with context:
+            cx.extend([add])
+        yield
