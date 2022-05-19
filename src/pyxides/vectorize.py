@@ -65,7 +65,7 @@ class AttrVector(AttrGetter):  #
     ...         self.word = str(word)
     ...         self.stem = str(stem)
 
-    >>> class Sentence(ListOf(Word), AttrVector):
+    >>> class Sentence(ListOf(Word), AttrTabulate):
     ...     @property
     ...     def stems(self):
     ...         return self.attrs('stem')
@@ -73,7 +73,7 @@ class AttrVector(AttrGetter):  #
     The `AttrVector` class allows you to write thess kind of definitions
     more succinctly without the explicit function definition as:
 
-    >>> class Sentence(ListOf(Word), AttrVector):
+    >>> class Sentence(ListOf(Word)):
     ...     stems = AttrVector('stem')
 
 
@@ -130,6 +130,7 @@ class AttrVector(AttrGetter):  #
         return filter(test or None, self.map(target))
 
     def __get__(self, instance, objtype=None):
+        # sourcery skip: assign-if-exp, reintroduce-else
         if instance is None:  # called from class
             return self
 
@@ -278,9 +279,7 @@ class AttrTableDescriptor:
     def __getattr__(self, name):
         # hack attribute lookup to vectorize across container if possible as a
         # shortcut. ie. self.attr.name does self.getattrs('name')
-        if self.target:
-            return self(name)
-        return super().__getattribute__(name)
+        return self(name) if self.target else super().__getattribute__(name)
 
     def __call__(self, *attrs, default=NULL, defaults=None):
         """
@@ -354,7 +353,7 @@ class MethodVectorizer:
     >>> word.uppers()     # [_.upper() for _ in word]
     ['H', 'E', 'L', 'L', 'O', '!']
 
-    Another example:
+    Another simple example:
     >>> import math
     ...
     ... class Formatters(ListOf(str)):
@@ -362,8 +361,9 @@ class MethodVectorizer:
     ...
     ... fmt = Formatters(['%s', '%8.4f'])
     ... fmt.mod(repeat(math.pi))
-
-    >>> fmt.mod(['My favourite number is π:', math.pi])
+    ...
+    ... fmt.mod(['My favourite number is π:', math.pi])
+    ['My favourite number is π:','  3.1416']
     """
 
     def __init__(self, name, target=None, convert=echo0):
