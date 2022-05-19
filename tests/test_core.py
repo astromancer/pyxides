@@ -78,7 +78,7 @@ class TestOfType:
     def test_empty_init(self):
         CoI()
 
-    @test_steps('init_good', 'init_bad', 'append', 'extend')
+    @test_steps('init_good', 'append', 'extend', 'add', 'init_bad')
     @pytest.mark.parametrize(
         'Container, init, bad, action',
         [*itt.product([CoI], [(1, 2, 3)], [1.], _contexts),
@@ -86,37 +86,28 @@ class TestOfType:
     )
     def test_type_checking(self, Container, init, bad, action):
         #
-        Container.set_type_validation(action)
-        cx = Container(init)
-        assert all(isinstance(_, Container._allowed_types) for _ in cx)
-        yield
-
         context = _contexts[action]
+        Container.set_type_validation(action)
+        yield from self._generate_test_steps(Container, init, bad, context)
+
+        # init_bad
         with context:
             Container([bad])
         yield
 
-        with context:
-            cx.append(bad)
-        yield
-
-        with context:
-            cx.extend([bad])
-        yield
-
-    @test_steps('init',  'append', 'extend')
+    @test_steps('init',  'append', 'extend', 'add')
     @pytest.mark.parametrize(
         'Container, init, add, action',
         [(CoiCoerceFloat, (1, 2, 3.), 1., 'ignore'),
          (CoiCoerceFloat, (1, 2, 3.), 1j, 'raise')]
     )
     def test_type_coercion(self, Container, init, add, action):
-        #
+        yield from self._generate_test_steps(Container, init, add, _contexts[action])
+
+    def _generate_test_steps(self, Container, init, add, context):
         cx = Container(init)
         assert all(isinstance(_, Container._allowed_types) for _ in cx)
         yield
-
-        context = _contexts[action]
 
         with context:
             cx.append(add)
@@ -125,3 +116,10 @@ class TestOfType:
         with context:
             cx.extend([add])
         yield
+
+        with context:
+            cx + [add]
+        yield
+
+    def test_add(self):
+        assert isinstance(Coi([1, 2]) + [1, 3], Coi)
