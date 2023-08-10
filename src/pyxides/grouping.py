@@ -314,8 +314,11 @@ def get_sort_values(self, *keys, **kws):
             )
 
     if kws:
-        for fun, val in zip(kws.values(), zip(*self.attrs(*kws.keys()))):
-            vals.append(map(fun, val))
+        attrs = self.attrs(*kws.keys())
+        if len(kws) == 1:
+            attrs = zip(attrs)
+
+        vals.extend(map(fun, val) for fun, val in zip(kws.values(), zip(*attrs)))
 
     if not vals:
         raise ValueError('No attribute name(s) or function(s) to sort by.')
