@@ -32,7 +32,7 @@ class PrettyPrinter:
         # self.name = alias or parent.__class__.__name__
 
         # Check brackets ok
-        if len(self.brackets) in (0, 1):
+        if len(self.brackets) in {0, 1}:
             self.brackets = (self.brackets, ) * 2
         self.brackets = tuple(self.brackets)
         assert len(self.brackets) == 2
@@ -60,9 +60,7 @@ class PrettyPrinter:
 
     # @property
     def sized(self, l):
-        if self.show_size:
-            return f'(size {len(l)})'
-        return ''
+        return f'(size {len(l)})' if self.show_size else ''
 
     # @property
     def pre(self, l):
@@ -119,7 +117,7 @@ class PrettyPrinter:
 
         loc = indent
         line_count = 1  # start counting here so we break 1 line early
-        end = self.max_items - ei
+        # end = self.max_items - ei
         newline = '\n' + ' ' * indent
         s = newline * self.hang
         for i, item in enumerate(l):
@@ -163,4 +161,7 @@ class PPrintContainer:
         return self.pretty(self)
 
     def __str__(self):
+        return self.pretty(self)
+
+    def __format__(self, __format_spec: str) -> str:
         return self.pretty(self)

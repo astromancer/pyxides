@@ -15,6 +15,7 @@ from recipes.string import named_items
 from recipes.functionals import echo0, raises
 
 
+# ---------------------------------------------------------------------------- #
 def ignore(_):
     pass
 
@@ -27,9 +28,9 @@ class OfTypes(ABCMeta):
     >>> class Container(UserList, OfTypes(int)):
     ...     pass
 
-    which creates a container class `Container` that will only allow integer
+    This creates a container class `Container` that will only allow integer
     items inside. This constructor assigns a tuple of allowed types as class
-    attribute `_allowed_types`
+    attribute `_allowed_types` for checking against.
     """
 
     # NOTE: inherit from ABCMeta to avoid metaclass conflict with UserList which
@@ -55,7 +56,7 @@ class OfTypes(ABCMeta):
 
         # check arguments are given and class objects
 
-        if len(args) == 0:
+        if not args:
             raise ValueError(f'{cls.__name__}\'s constructor requires at least '
                              'one argument: the allowed type(s).')
 
@@ -249,7 +250,8 @@ class OfTypes(ABCMeta):
 
         return coerce
 
-        # alias
+
+# alias
 OfType = OfTypes
 
 
@@ -322,7 +324,7 @@ class _TypeEnforcer:
         emit = emit or self.emit
         emit(f'Items in container class {type(self).__name__!r} must derive '
              f'from{named_items(self._allowed_types, "", " one of ")}. '
-             f'Item {i}{" " * bool(i)}is of type {type(obj)!r}.')
+             f'Item {i}{" " * (i != "")}is of type {type(obj)!r}.')
 
         return obj
 
