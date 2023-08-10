@@ -1,48 +1,23 @@
 """
-Vectorization helpers
+Vectorization helpers.
 """
 
 # std
-
-from collections import abc
 import itertools as itt
+from collections import abc
 
 # local
-from recipes.op import MethodCaller, AttrGetter, AttrSetter, NULL
 from recipes.functionals import echo0
-
-from recipes.logging import logging, get_module_logger
-
-# module level logger
-logger = get_module_logger()
-logging.basicConfig()
-logger.setLevel(logging.DEBUG)
+from recipes.op import NULL, AttrGetter, AttrSetter, MethodCaller
+from recipes.dicts import vdict
 
 
 class repeat(dict):
-    """Helper class for repeating scalar objects"""
+    """Helper class for repeating scalar objects."""
 
     def __init__(self, mapping=(), **kws):
         kws = dict(mapping, **kws)
         super().__init__(zip(kws, map(itt.repeat, kws.values())))
-
-
-class vdict(dict):
-    """
-    Dictionary with vectorized item lookup.
-    """
-
-    def __getitem__(self, key):
-        # dispatch on np.ndarray for vectorized item getting with arbitrary
-        # nesting
-        if isinstance(key, abc.Collection):
-            # Container and not str
-            return [self[_] for _ in key]
-
-        if key in (Ellipsis, None):
-            return list(self.values())
-
-        return super().__getitem__(key)
 
 
 class AttrVector(AttrGetter):  #
@@ -113,13 +88,13 @@ class AttrVector(AttrGetter):  #
     ['h', 'e', 'l', 'l', 'o', '!']
     """
 
-    def __init__(self, *keys, default=NULL, defaults=None, convert=echo0):
+    def __init__(self, *keys, default=NULL, defaults=None, output=echo0):
         super().__init__(*keys, default=default, defaults=defaults)
-        assert callable(convert)
-        self.convert = convert
+        assert callable(output)
+        self.output = output
 
     def __call__(self, target):
-        return self.convert(list(self.map(target)))
+        return self.output(list(self.map(target)))
 
     def map(self, target):
         assert isinstance(target, abc.Collection)
@@ -205,13 +180,17 @@ class AttrVector(AttrGetter):  #
         # check values are same length as container before we attempt to set
         # any attributes
         size = len(target)
-        assert size
+        if size == 0:
+            return
+
         for key, values in kws.items():
             if isinstance(values, abc.Sized) and (len(values) != size):
                 raise ValueError(
-                    f'Cannot set attributes: {key} has {len(values)} values, '
-                    f'while {size} are expected for target container of type '
-                    f'{type(target)}.'
+                    f'Cannot set attributes: {key!r} has {len(values)} values,'
+                    f' while target container {type(target)} has size {size}. '
+                    f'If you intended to assign the same attribute value to '
+                    f'all objects in the container, use the '
+                    f'`pyxidex.vectorize.repeat` object to avoid ambiguity.'
                 )
             if isinstance(values, itt.repeat):
                 # Catch infinite repeats and only use as many as are needed
@@ -227,7 +206,7 @@ class AttrVector(AttrGetter):  #
             # assert tuple([getattr(item, k) for k in kws.keys()]) == values
 
 
-class AttrTableDescriptor: 
+class AttrTableDescriptor:
     """
     Vectorized attribute lookup on items in a container.
 
@@ -267,11 +246,11 @@ class AttrTableDescriptor:
 
     """
 
-    # TODO ADD optional static attributes here ?! 
+    # TODO ADD optional static attributes here ?!
     # Can optionally, be initialized with a set of static attributes names, in
     # which case, the call method can be used without parameters to lookup those
-    # attribute values. 
-    
+    # attribute values.
+
     def __init__(self, target=None):
         # self.name = ''
         self.target = target
@@ -311,13 +290,13 @@ class AttrTableDescriptor:
 
 
 class _MethodVectorizer(MethodCaller):
-    def __init__(self, *args, convert=list, **kws):
+    def __init__(self, *args, output=list, **kws):
         super().__init__(*args, **kws)
-        assert callable(convert)
-        self.convert = convert
+        assert callable(output)
+        self.output = output
 
     def __call__(self, target):
-        return self.convert(map(super().__call__, target))
+        return self.output(map(super().__call__, target))
 
 
 class _GroupMethodVectorizer(_MethodVectorizer):
@@ -366,10 +345,10 @@ class MethodVectorizer:
     ['My favourite number is π:','  3.1416']
     """
 
-    def __init__(self, name, target=None, convert=echo0):
+    def __init__(self, name, target=None, output=echo0):
         self.name = name
         self.target = target
-        self.convert = convert
+        self.output = output
 
     def __call__(self, *args, **kws):
         assert self.target
@@ -378,6 +357,7 @@ class MethodVectorizer:
             kls = _GroupMethodVectorizer
         elif isinstance(self.target, abc.Collection):
             kls = _MethodVectorizer
+            kws['output'] = self.output
         else:
             raise TypeError(f'Cannot vectorize object of type '
                             f'{type(self.target)}.')
