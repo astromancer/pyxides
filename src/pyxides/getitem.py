@@ -36,14 +36,14 @@ class ArrayLikeIndexing:
         return getitem(key)
 
 
-class IndexerMixin(ArrayLikeIndexing):  # IndexingMixin
+class IndexingMixin(ArrayLikeIndexing):  # IndexingMixin
     """
     Mixin that supports vectorized item getting like numpy arrays
-    
+
     NOTE:  # needs to be before `UserList` in mro
     """
     # TODO: sort out mro automatically
-    
+
     _returned_type = None
 
     def set_returned_type(self, obj):
@@ -66,7 +66,7 @@ class IndexerMixin(ArrayLikeIndexing):  # IndexingMixin
         # getitem = super().__getitem__
         #
         if (isinstance(key, (numbers.Integral, slice, type(...)))
-                and not isinstance(key, (bool, np.bool))):
+                and not isinstance(key, bool)):
             return super().__getitem__(key)
             # return super(ArrayLikeIndexing, self).__getitem__(key)
 
@@ -80,7 +80,11 @@ class IndexerMixin(ArrayLikeIndexing):  # IndexingMixin
         raise TypeError('Invalid index type %r' % type(key))
 
 
-class ContainerWrapper(IndexerMixin):
+# alias
+IndexerMixin = IndexingMixin
+
+
+class ContainerWrapper(IndexingMixin):
 
     _wraps = list
     # if you use this class without changing this class attribute, you may as
