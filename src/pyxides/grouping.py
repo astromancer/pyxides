@@ -14,6 +14,7 @@ import numpy as np
 
 # local
 from recipes.dicts import DefaultOrderedDict, pformat
+from recipes import cosort
 
 # relative
 from .vectorize import CallVectorizerDescriptor, Vectorized, AttrTabulate
@@ -22,6 +23,7 @@ from .vectorize import CallVectorizerDescriptor, Vectorized, AttrTabulate
 SELECT_LOGIC = {'AND': np.logical_and,
                 'OR': np.logical_or,
                 'XOR': np.logical_xor}
+
 
 def NULL():
     pass
@@ -39,17 +41,17 @@ class Groups(DefaultOrderedDict):
 
     # Method vectorizer
     calls = CallVectorizerDescriptor()
-        
-    # This class should never be instantiated directly, only by the new_group
-    # method of AttrGrouper, which sets `group_id`
+
+    # This class should never be instantiated directly, only by the `new_group`
+    # method of `AttrGrouper` or the `group_by` method, which sets `group_id`.
 
     def __init__(self, factory=None, mapping=(), **kws):
         """
-        note: the init arguments here do not do what you they normally do for
+        Note: the init arguments here do not do what you they normally do for
         the construction of a dict-like object. Objects of this type are
         always instantiated empty. This class should never be
         instantiated directly with keywords from the user, only by the
-        `new_groups`  method of AttrGrouper.
+        `new_groups` method of `AttrGrouper`.
 
         `keys` and `kws` are the "context" by which the grouping is done.
         Keep track of this so we have this info available later for pprint
@@ -102,6 +104,11 @@ class Groups(DefaultOrderedDict):
 
         """
         return self.to_list().group_by(*keys, return_index=return_index, **kws)
+
+    def sorted(self):
+        new = self.__class__(None, zip(*cosort(*zip(*self.items()))))
+        new.group_id = self.group_id
+        return new
 
     def select_by(self, logic='AND',  **kws):
         """
@@ -242,9 +249,9 @@ class AttrGrouper(AttrTabulate):
             # key attributes are not equal across all containers
             # get indices of elements in this group.
             # list comp for-loop needed for tuple attrs
-            for i, (item, a) in enumerate(zip(self, vals)):
-                groups[a].append(item)
-                indices[a].append(i)
+            for i, (gid, item) in enumerate(zip(vals, self)):
+                groups[gid].append(item)
+                indices[gid].append(i)
 
         #
         g.update(groups)
@@ -253,9 +260,7 @@ class AttrGrouper(AttrTabulate):
         # g.default_factory = None # NOTE: need default_factory for to_list!
         # indices.default_factory = None
 
-        if return_index:
-            return g, indices
-        return g
+        return (g, indices) if return_index else g
 
     def sort_by(self, *keys, **kws):
         """
