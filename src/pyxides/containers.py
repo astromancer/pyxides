@@ -3,21 +3,21 @@ Container magic
 """
 
 
-# std libs
+# std
 from collections import UserList
 
-# local libs
+# local
 from recipes.oo import SelfAware, meta
 from recipes.logging import LoggingMixin
 
-# relative libs
-from .getitem import ItemGetter
+# relative
+from .getitem import IndexingMixin
 from .grouping import AttrGrouper
 from .pprint import PPrintContainer
-from .type_check import OfType  # @keep
+from .typing import OfType  # @keep
 
 
-class ArrayLike1D(ItemGetter, UserList):
+class ArrayLike1D(IndexingMixin, UserList):
     """
     A container class that emulates a one dimensional numpy array,
     providing all the array slicing niceties.

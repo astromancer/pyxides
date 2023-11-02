@@ -2,7 +2,7 @@ import numbers
 import numpy as np
 
 
-class ItemArrayGetter:
+class ArrayLikeIndexing:
     """
     Mixin for vectorized item getting for index keys that are sequences of
     items: lists, tuples, numpy arrays
@@ -36,10 +36,14 @@ class ItemArrayGetter:
         return getitem(key)
 
 
-class ItemGetter(ItemArrayGetter):
+class IndexingMixin(ArrayLikeIndexing):  # IndexingMixin
     """
     Mixin that supports vectorized item getting like numpy arrays
+
+    NOTE:  # needs to be before `UserList` in mro
     """
+    # TODO: sort out mro automatically
+
     _returned_type = None
 
     def set_returned_type(self, obj):
@@ -58,25 +62,29 @@ class ItemGetter(ItemArrayGetter):
         return self._returned_type or self.__class__
 
     def __getitem__(self, key):
-        # get_single_item = super(ItemArrayGetter, self).__getitem__
+        # get_single_item = super(ArrayLikeIndexing, self).__getitem__
         # getitem = super().__getitem__
         #
         if (isinstance(key, (numbers.Integral, slice, type(...)))
-                and not isinstance(key, (bool, np.bool))):
+                and not isinstance(key, bool)):
             return super().__getitem__(key)
-            # return super(ItemArrayGetter, self).__getitem__(key)
+            # return super(ArrayLikeIndexing, self).__getitem__(key)
 
         if isinstance(key, (list, tuple, np.ndarray)):
             # if multiple item retrieval vectorizer!
             # wrap in required type
             return self.get_returned_type()(
-                ItemArrayGetter.__getitem__(self, key)
+                ArrayLikeIndexing.__getitem__(self, key)
             )
 
         raise TypeError('Invalid index type %r' % type(key))
 
 
-class ContainerWrapper(ItemGetter):
+# alias
+IndexerMixin = IndexingMixin
+
+
+class ContainerWrapper(IndexingMixin):
 
     _wraps = list
     # if you use this class without changing this class attribute, you may as

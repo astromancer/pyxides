@@ -2,25 +2,31 @@
 Classes for grouping containers
 """
 
-# std libs
+
+# std
 import operator as op
 import functools as ftl
 import itertools as itt
 from collections import abc
 
-# third-party libs
+# third-party
 import numpy as np
 
-# local libs
+# local
 from recipes.dicts import DefaultOrderedDict, pformat
+from recipes import cosort
 
-# relative libs
-from .vectorize import AttrMapper
+# relative
+from .vectorize import CallVectorizerDescriptor, Vectorized, AttrTabulate
 
 
 SELECT_LOGIC = {'AND': np.logical_and,
                 'OR': np.logical_or,
                 'XOR': np.logical_xor}
+
+
+def NULL():
+    pass
 
 
 class Groups(DefaultOrderedDict):
@@ -33,16 +39,19 @@ class Groups(DefaultOrderedDict):
 
     group_id = (), {}
 
-    # This class should never be instantiated directly, only by the new_group
-    # method of AttrGrouper, which sets `group_id`
+    # Method vectorizer
+    calls = CallVectorizerDescriptor()
+
+    # This class should never be instantiated directly, only by the `new_group`
+    # method of `AttrGrouper` or the `group_by` method, which sets `group_id`.
 
     def __init__(self, factory=None, mapping=(), **kws):
         """
-        note: the init arguments here do not do what you they normally do for
+        Note: the init arguments here do not do what you they normally do for
         the construction of a dict-like object. Objects of this type are
         always instantiated empty. This class should never be
         instantiated directly with keywords from the user, only by the
-        `new_groups`  method of AttrGrouper.
+        `new_groups` method of `AttrGrouper`.
 
         `keys` and `kws` are the "context" by which the grouping is done.
         Keep track of this so we have this info available later for pprint
@@ -75,7 +84,7 @@ class Groups(DefaultOrderedDict):
         list_like = self.default_factory()
         # filter None since we use that to represent empty group
         for obj in filter(None, self.values()):
-            if isinstance(obj, type(list_like)):
+            if isinstance(obj, abc.Container):  # type(list_like)
                 list_like.extend(obj)
             else:
                 list_like.append(obj)
@@ -96,6 +105,11 @@ class Groups(DefaultOrderedDict):
         """
         return self.to_list().group_by(*keys, return_index=return_index, **kws)
 
+    def sorted(self):
+        new = self.__class__(None, zip(*cosort(*zip(*self.items()))))
+        new.group_id = self.group_id
+        return new
+
     def select_by(self, logic='AND',  **kws):
         """
         Select the files with attribute value pairs equal to those passed as
@@ -114,12 +128,12 @@ class Groups(DefaultOrderedDict):
 
     def varies_by(self, *keys):
         """
-        Check whether the attribute value mapped to by `key` varies across
+        Check whether the attribute value(s) mapped to by `keys` varies across
         the set of observing runs
 
         Parameters
         ----------
-        key
+        keys
 
         Returns
         -------
@@ -145,7 +159,7 @@ class Groups(DefaultOrderedDict):
     #                           *(next(it) for _, it in itt.groupby(self, id)))
 
     def map(self, func, *args, **kws):
-        # runs an arbitrary function on each shocCampaign in the group
+        # runs an arbitrary function on each shocCampaign in the grouping
         assert callable(func)
         out = self.__class__(self.default_factory)
         out.group_id = self.group_id
@@ -154,40 +168,19 @@ class Groups(DefaultOrderedDict):
             out[key] = None if obj is None else func(obj, *args, **kws)
         return out
 
-    def calls(self, name, *args, **kws):
-        """
-        For each group of observations (shocCampaign), call the
-        method with name `name`  passing  `args` and `kws`.
-
-        Parameters
-        ----------
-        name
-        args
-        kws
-
-        Returns
-        -------
-
-        """
-
-        def run_method(obj, *args, **kws):
-            return getattr(obj, name)(*args, **kws)
-
-        return self.map(run_method, *args, **kws)
-
     def attrs(self, *keys):
         out = {}
         for key, obj in self.items():
             if obj is None:
                 out[key] = None
-            elif isinstance(obj, AttrMapper):
+            elif isinstance(obj, Vectorized):
                 out[key] = obj.attrs(*keys)
             else:
                 out[key] = op.attrgetter(*keys)(obj)
         return out
 
 
-class AttrGrouper(AttrMapper):
+class AttrGrouper(AttrTabulate):
     """
     Abstraction layer that can group, split and sort multiple data sets
     """
@@ -256,9 +249,9 @@ class AttrGrouper(AttrMapper):
             # key attributes are not equal across all containers
             # get indices of elements in this group.
             # list comp for-loop needed for tuple attrs
-            for i, (item, a) in enumerate(zip(self, vals)):
-                groups[a].append(item)
-                indices[a].append(i)
+            for i, (gid, item) in enumerate(zip(vals, self)):
+                groups[gid].append(item)
+                indices[gid].append(i)
 
         #
         g.update(groups)
@@ -267,9 +260,7 @@ class AttrGrouper(AttrMapper):
         # g.default_factory = None # NOTE: need default_factory for to_list!
         # indices.default_factory = None
 
-        if return_index:
-            return g, indices
-        return g
+        return (g, indices) if return_index else g
 
     def sort_by(self, *keys, **kws):
         """
@@ -277,6 +268,8 @@ class AttrGrouper(AttrMapper):
         kws can be (attribute, callable) pairs in which case sorting will be
          done according to value returned by callable on a given attribute.
         """
+        if len(self) < 1:
+            return self
 
         vals = get_sort_values(self, *keys, **kws)
         # if not len(vals):
@@ -290,7 +283,7 @@ class AttrGrouper(AttrMapper):
         idx, _ = zip(*sorted(enumerate(vals), key=op.itemgetter(1)))
         return self[list(idx)]
 
-    def select_by(self, logic='AND', **kws):
+    def selection(self, logic='AND', **kws):
         if not kws:
             raise ValueError('No criteria for selection provided.')
 
@@ -302,8 +295,10 @@ class AttrGrouper(AttrMapper):
                 seek = ftl.partial(op.eq, seek)
 
             selection = logic(selection, list(map(seek, vals)))
-        #
-        return self[selection]
+        return selection
+
+    def select_by(self, logic='AND', **kws):
+        return self[self.selection(logic, **kws)]
 
 
 def get_sort_values(self, *keys, **kws):
@@ -324,8 +319,11 @@ def get_sort_values(self, *keys, **kws):
             )
 
     if kws:
-        for fun, val in zip(kws.values(), zip(*self.attrs(*kws.keys()))):
-            vals.append(map(fun, val))
+        attrs = self.attrs(*kws.keys())
+        if len(kws) == 1:
+            attrs = zip(attrs)
+
+        vals.extend(map(fun, val) for fun, val in zip(kws.values(), zip(*attrs)))
 
     if not vals:
         raise ValueError('No attribute name(s) or function(s) to sort by.')
