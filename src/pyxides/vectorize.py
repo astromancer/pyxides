@@ -345,7 +345,7 @@ class MethodVectorizer:
     ['My favourite number is π:','  3.1416']
     """
 
-    def __init__(self, name, target=None, output=echo0):
+    def __init__(self, name, target=None, output=list):
         self.name = name
         self.target = target
         self.output = output
