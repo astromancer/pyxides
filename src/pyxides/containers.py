@@ -1,5 +1,5 @@
 """
-Container magic
+Container magic.
 """
 
 
@@ -11,8 +11,8 @@ from recipes.oo import SelfAware, meta
 from recipes.logging import LoggingMixin
 
 # relative
-from .getitem import IndexingMixin
 from .grouping import AttrGrouper
+from .getitem import IndexingMixin
 from .pprint import PPrintContainer
 from .typing import OfType  # @keep
 

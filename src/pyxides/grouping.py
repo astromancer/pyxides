@@ -13,11 +13,11 @@ from collections import abc
 import numpy as np
 
 # local
-from recipes.dicts import DefaultOrderedDict, pformat
 from recipes import cosort
+from recipes.dicts import DefaultOrderedDict, pformat
 
 # relative
-from .vectorize import CallVectorizerDescriptor, Vectorized, AttrTabulate
+from .vectorize import AttrTabulate, CallVectorizerDescriptor, Vectorized
 
 
 SELECT_LOGIC = {'AND': np.logical_and,

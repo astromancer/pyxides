@@ -9,7 +9,6 @@ from collections import abc
 # local
 from recipes.functionals import echo0
 from recipes.op import NULL, AttrGetter, AttrSetter, MethodCaller
-from recipes.dicts import vdict
 
 
 class repeat(dict):

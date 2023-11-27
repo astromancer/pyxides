@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Union, Callable
+from typing import Callable, Union
 
 
 @dataclass(repr=False)
