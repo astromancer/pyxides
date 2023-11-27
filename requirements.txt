@@ -1,8 +1,2 @@
-loguru
-numpy
-more_itertools
-numpydoc
-docsplice
-decorator
-stdlib_list
-git+https://github.com/astromancer/recipes
+# git+https://github.com/astromancer/
+-e file:///home/hannes/work/recipes#egg=recipes
