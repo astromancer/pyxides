@@ -19,7 +19,9 @@ dependencies = [
     "loguru",
     "decorator",
     "more_itertools",
-    "numpy"
+    "numpy",
+
+    "recipes"
 ]
 
 [project.urls]
