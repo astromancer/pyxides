@@ -14,7 +14,7 @@ import numpy as np
 
 # local
 from recipes import cosort
-from recipes.dicts import DefaultOrderedDict, pformat
+from recipes.containers.dicts import DefaultOrderedDict, pformat
 
 # relative
 from .vectorize import AttrTabulate, CallVectorizerDescriptor, Vectorized
