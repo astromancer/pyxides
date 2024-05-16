@@ -10,7 +10,7 @@ from typing import MutableMapping
 from collections import UserList, abc
 
 # local
-from recipes.containers.lists import split
+from recipes.containers import split
 from recipes.string import named_items
 from recipes.functionals import echo0, raises
 
